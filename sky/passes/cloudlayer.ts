@@ -1,0 +1,59 @@
+/**
+ * The cloud layer: cumulus and cirrus along every pixel's view ray, marched once per frame with a
+ * fresh jitter. Its noise is averaged away over frames by the scene pass.
+ */
+
+import atmosphere from '../shaders/atmosphere.wgsl'
+import camera from '../shaders/camera.wgsl'
+import cirrus from '../shaders/cirrus.wgsl'
+import cloudlayer from '../shaders/cloudlayer.wgsl'
+import clouds from '../shaders/clouds.wgsl'
+import common from '../shaders/common.wgsl'
+import cumulus from '../shaders/cumulus.wgsl'
+import { shader } from '../shader'
+import { uniformsWgsl } from '../uniforms'
+import { lutEntries } from './atmosphere'
+import { createFullscreenPipeline, drawFullscreen } from './fullscreen'
+import { noiseEntries } from './noise'
+import { uniformsEntry, type Pass, type PassContext } from './pass'
+
+/** rgb = radiance scattered toward the eye, a = transmittance of what lies behind. */
+export const cloudFormat: GPUTextureFormat = 'rgba16float'
+
+export interface CloudLayerInputs {
+  transmittance: GPUTextureView
+  skyView: GPUTextureView
+  cloudNoise: GPUTextureView
+}
+
+export async function createCloudLayerPass(
+  { device, uniforms }: PassContext,
+  { transmittance, skyView, cloudNoise }: CloudLayerInputs,
+): Promise<Pass> {
+  const module = shader(device, 'cloud layer', [
+    uniformsWgsl,
+    common,
+    atmosphere,
+    camera,
+    clouds,
+    cumulus,
+    cirrus,
+    cloudlayer,
+  ])
+  const pipeline = await createFullscreenPipeline(device, 'cloud layer', module, cloudFormat)
+  const bindGroup = device.createBindGroup({
+    label: 'cloud layer',
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      uniformsEntry(uniforms),
+      ...lutEntries(device, { transmittance, skyView }),
+      ...noiseEntries(device, cloudNoise),
+    ],
+  })
+
+  return {
+    encode(encoder, targets) {
+      drawFullscreen(encoder, 'cloud layer', pipeline, bindGroup, targets.clouds)
+    },
+  }
+}

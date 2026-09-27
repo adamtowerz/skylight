@@ -1,0 +1,134 @@
+/**
+ * Owns every GPU resource that flows between passes and encodes the frame graph:
+ *
+ *   noise (compute, once at init)                           cloud noise volume
+ *   uniforms → transmittance → multiscattering → sky view   (atmosphere LUTs, compute)
+ *            → exposure (compute)
+ *            → cloud layer → scene (HDR + cloud history, render scale) → post (swap chain)
+ *
+ * Passes are created in parallel with async pipelines, then run in order every frame. The LUTs
+ * are rebuilt every frame too: moods change the air, and together they cost well under a
+ * millisecond. The cloud history is a ping-pong pair: each frame the scene pass reads one and
+ * writes the other.
+ */
+
+import type { Gpu } from './gpu'
+import type { Vec2 } from './math'
+import { lutFormat } from './passes/atmosphere'
+import type { ComputePass } from './passes/compute'
+import { cloudFormat, createCloudLayerPass } from './passes/cloudlayer'
+import { createExposurePass, exposureBufferSize } from './passes/exposure'
+import { createMultiscatteringPass, multiscatteringSize } from './passes/multiscattering'
+import { createNoisePass, noiseFormat, noiseSize } from './passes/noise'
+import type { Pass, Targets } from './passes/pass'
+import { createPostPass } from './passes/post'
+import { createScenePass, sceneFormat } from './passes/scene'
+import { createSkyViewPass, skyViewSize } from './passes/skyview'
+import { createTransmittancePass, transmittanceSize } from './passes/transmittance'
+import { Uniforms } from './uniforms'
+
+/** The scene is shaded at most at this many pixels and bilinearly upsampled by `post`. */
+const maxScenePixels = 1.1e6
+
+export interface Renderer {
+  /** Resizes the render targets for a new output size; returns the scene resolution. */
+  resize(width: number, height: number): Vec2
+  render(uniforms: ArrayBuffer): void
+  destroy(): void
+}
+
+export async function createRenderer({ device, context, format }: Gpu): Promise<Renderer> {
+  const uniforms = device.createBuffer({
+    label: 'uniforms',
+    size: Uniforms.size,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  const exposure = device.createBuffer({
+    label: 'exposure',
+    size: exposureBufferSize,
+    usage: GPUBufferUsage.STORAGE,
+  })
+  const lut = (label: string, size: GPUExtent3DDict) =>
+    device.createTexture({
+      label,
+      size,
+      format: lutFormat,
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+    })
+  const transmittanceLut = lut('transmittance', transmittanceSize)
+  const multiscatteringLut = lut('multiscattering', multiscatteringSize)
+  const skyViewLut = lut('sky view', skyViewSize)
+  const transmittance = transmittanceLut.createView()
+  const multiscattering = multiscatteringLut.createView()
+  const skyView = skyViewLut.createView({ dimension: '2d-array' })
+  const noiseVolume = device.createTexture({
+    label: 'cloud noise',
+    size: noiseSize,
+    dimension: '3d',
+    format: noiseFormat,
+    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+  })
+  const cloudNoise = noiseVolume.createView()
+  const shared = { device, uniforms }
+
+  const [noise, ...graph]: [ComputePass, ...Pass[]] = await Promise.all([
+    createNoisePass(shared, cloudNoise),
+    createTransmittancePass(shared, transmittance),
+    createMultiscatteringPass(shared, { transmittance }, multiscattering),
+    createSkyViewPass(shared, { transmittance, multiscattering }, skyView),
+    createExposurePass(shared, { skyView }, exposure),
+    createCloudLayerPass(shared, { transmittance, skyView, cloudNoise }),
+    createScenePass(shared, { transmittance, skyView }),
+    createPostPass(shared, { exposure, format }),
+  ])
+  const init = device.createCommandEncoder({ label: 'init' })
+  noise.encode(init)
+  device.queue.submit([init.finish()])
+
+  // Everything at render scale, recreated on resize.
+  let renderTargets: GPUTexture[] = []
+  let views: Omit<Targets, 'output'> | undefined
+
+  return {
+    resize(width, height) {
+      const renderScale = Math.min(1, Math.sqrt(maxScenePixels / (width * height)))
+      const sceneWidth = Math.max(1, Math.round(width * renderScale))
+      const sceneHeight = Math.max(1, Math.round(height * renderScale))
+      const target = (label: string, format: GPUTextureFormat) =>
+        device.createTexture({
+          label,
+          size: [sceneWidth, sceneHeight],
+          format,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        })
+      for (const texture of renderTargets) texture.destroy()
+      renderTargets = [
+        target('cloud layer', cloudFormat),
+        target('cloud history', cloudFormat),
+        target('cloud history', cloudFormat),
+        target('scene', sceneFormat),
+      ]
+      const [clouds, history, accumulated, scene] = renderTargets.map((texture) => texture.createView())
+      views = { clouds, history, accumulated, scene }
+      return [sceneWidth, sceneHeight]
+    },
+
+    render(data) {
+      if (!views) return
+      device.queue.writeBuffer(uniforms, 0, data)
+      const targets = { ...views, output: context.getCurrentTexture().createView() }
+      const encoder = device.createCommandEncoder({ label: 'frame' })
+      for (const pass of graph) pass.encode(encoder, targets)
+      device.queue.submit([encoder.finish()])
+      // What was accumulated this frame is the history of the next.
+      views = { ...views, history: views.accumulated, accumulated: views.history }
+    },
+
+    destroy() {
+      for (const texture of [...renderTargets, noiseVolume, transmittanceLut, multiscatteringLut, skyViewLut]) texture.destroy()
+      exposure.destroy()
+      uniforms.destroy()
+      context.unconfigure()
+    },
+  }
+}

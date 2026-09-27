@@ -1,0 +1,133 @@
+# Skylight
+
+The sky as you'd see it lying on your back in the grass. A static Next.js page with a WebGPU
+engine behind it: the atmosphere and clouds are physically based, the finish is stylized (AgX
+tonemap, gentle grade, paper, film grain, dither). Time drifts from sunset through the night and
+back again, lingering at dusk and dawn, and no two sunsets look the same.
+
+## How it loads
+
+The page is prerendered as a blank screen, white or black to match the device theme: about 2 KB of gzipped HTML with its CSS
+inlined, no fonts, no stylesheet to wait for. After hydration, `components/sky.tsx` lazily imports
+the engine (`sky/`, a separate ≈ 28 KB chunk with all the shaders), which compiles its pipelines
+in parallel and then opens onto the scene in-shader, like eyes opening. Without WebGPU, or if the
+GPU is lost, a still CSS dusk fades in instead.
+
+On Vercel the page is cached by the CDN until the next deployment (`s-maxage`), and every script
+under `/_next/static` is content-hashed and `immutable`.
+
+## How it renders
+
+The CPU only schedules work. Each frame it advances the clock, places the sun, moon and camera,
+fills one uniform buffer (`sky/uniforms.ts`, generated from a schema so TypeScript and WGSL agree
+on every offset) and encodes the frame graph (`sky/renderer.ts`):
+
+```
+pass              reads                                  writes
+noise (once)      —                                      cloud noise volume, 128³
+transmittance     —                                      transmittance LUT
+multiscattering   transmittance                          multiscattering LUT
+skyview           transmittance, multiscattering         sky-view LUT (sun layer, moon layer)
+exposure          sky view                               exposure buffer
+cloud layer       transmittance, sky view, noise         cloud layer (jittered), ≤ 1.1 MP
+scene             transmittance, sky view, cloud layer,  scene target + next cloud history
+                  cloud history
+post              scene target, exposure                 swap chain
+```
+
+| Pass              | Output                          | Does                                                                    |
+| ----------------- | ------------------------------- | ----------------------------------------------------------------------- |
+| `noise`           | `rgba8unorm` 128³, once         | tileable Perlin–Worley + Worley fBm for the clouds (Schneider 2015)     |
+| `transmittance`   | `rgba16float` 256×64            | transmittance to space per (r, μ) (Hillaire 2020, Bruneton's mapping)   |
+| `multiscattering` | `rgba16float` 32×32             | ψ_ms: every scattering order past the first, 64 directions per texel    |
+| `skyview`         | `rgba16float` 192×108, 2 layers | atmosphere radiance around the observer, lit by the sun / by the moon   |
+| `exposure`        | storage buffer `{ value: f32 }` | meters the sky-view LUT over the view; compressed key; adapts over time |
+| `cloud layer`     | `rgba16float` cloud layer       | per pixel view ray → cirrus + cumulus (radiance, transmittance)         |
+| `scene`           | `rgba16float` scene + history   | clouds averaged over frames, over the sky (LUT, sun, moon, stars)       |
+| `post`            | swap chain                      | upsample, exposure, vignette, AgX, grade, paper, grain, dither, reveal  |
+
+Every pass reads the same `Uniforms` buffer at `@group(0) @binding(0)`. Passes live in
+`sky/passes/`, one file each, and own only their pipelines and bind groups; the renderer owns every
+resource that flows between them, so the data flow reads top to bottom in `renderer.ts`. The whole
+frame takes about 6–7 ms of GPU time at 1440 × 900 on an Apple M1 Pro, most of it the cloud march.
+
+## The physics
+
+**Air.** The atmosphere follows Hillaire 2020: Rayleigh and Mie scattering, ozone absorption and
+a sunlit ground, baked every frame into a transmittance LUT, a multiple-scattering LUT and a
+sky-view LUT with one layer per light (the moonlit night is Rayleigh-blue too, over a faint
+airglow floor). The LUTs are cheap, so they are rebuilt every frame: *moods* (`sky/moods.ts`)
+change the air itself. Each mood is a set of multipliers on Earth's parameters — aerosol density,
+height and Ångström exponent, Mie anisotropy, ozone (the violet of the blue hour), the sunlight's
+spectral slope — plus cloud cover. Colour comes from amplified physics, never from paint.
+
+**Clouds.** A raymarched cumulus shell at 1.5–3.5 km sits in front of a cirrus sheet at 8 km
+(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). Sunlight reaches every sample through the
+transmittance LUT, so after the sun sets at the ground the clouds keep catching it, gold, then rose,
+then the cirrus alone glows pink. Direct light uses a short light march, a dual-lobe phase function
+(the silver lining) and multiple-scattering octaves after Wrenninge et al. 2013, which reach deeper
+under a grazing sun so sunset heaps glow through. Ambient light is the sky-view LUT, with shaded
+sides seeing only the half of the sky turned from the sun (blue shadows at noon, violet at dusk),
+and grass bounce from below, both dimmed with depth into the heap. At night the moon lights them,
+and they stand dark against the airglow with silver rims.
+
+**Time.** The march is jittered differently every frame and averaged over about ten frames
+(`temporal.wgsl`): everything is at infinity, so last frame's average is found by projecting this
+pixel's direction through last frame's camera, then clipped to this frame's neighbourhood so
+drifting clouds never ghost. Cloud motion is a pure function of simulated time, so scrubbing the
+clock scrubs the clouds.
+
+## Controls
+
+| Input        | Effect                                 |
+| ------------ | -------------------------------------- |
+| `←` / `→`    | ease time back / forward by 15 minutes |
+| `space`      | pause / resume time                    |
+| pointer      | a touch of parallax                    |
+| `?hour=18.4` | start at this hour (default 17.6)      |
+| `?speed=0`   | time multiplier; 0 freezes the clock   |
+| `?mood=2`    | which mood the first twilight shows    |
+
+Moods, in order: `goldenHaze`, `violetDusk`, `emberSky`, `clear`, `softOvercast`. The sun sets at
+18:52; golden hour is about 18.0–18.8, the pink and violet afterglow 18.9–19.4.
+
+## Development
+
+```sh
+npm install
+npm run dev          # http://localhost:3000
+npm run typecheck    # tsc --noEmit
+npm run build        # the page must stay static (○)
+npm start
+```
+
+`scripts/screenshot.mjs` opens a URL in the installed Google Chrome (through Playwright, with
+WebGPU enabled), waits, and saves a PNG. It fails fast if the browser has no WebGPU adapter and
+echoes console errors.
+
+```sh
+npm run build && npm start &
+node scripts/screenshot.mjs --url 'http://localhost:3000/?hour=18.7&speed=0&mood=2' \
+  --out sunset.png --wait 5000
+
+# A sequence from one page load, e.g. to check the reveal: writes reveal-0ms.png, …
+node scripts/screenshot.mjs --url 'http://localhost:3000/?speed=0' --out reveal.png --wait 0,1500,5000
+
+# Options: --size 390x844 (default 1440x900), --dpr 2 (retina), --theme light (default dark),
+#          --headed (if headless has no GPU)
+```
+
+Use `?speed=0` for reproducible frames: the sun, moon and clouds hold still; only the grain and
+the camera's slow breathing move.
+
+### Adding a pass
+
+1. Write `sky/shaders/foo.wgsl` with a `@compute` entry that reads `u` (binding 0). If it
+   includes `atmosphere.wgsl`, the LUT inputs are at bindings 1–4 and the output goes at binding 5
+   (`outputBinding`), e.g. a `texture_storage_2d<rgba16float, write>`.
+2. Add `sky/passes/foo.ts` that returns
+   `createComputePass(context, { label, module, entries, workgroups })`, with entries
+   `uniformsEntry(…)`, `...lutEntries(device, { transmittance })` for the LUTs it samples, and
+   the output. Pipelines use `layout: 'auto'`, so list only the bindings the shader actually uses.
+3. In `renderer.ts`, create the texture, pass it to the new pass and to its consumers, and put the
+   pass in the graph in execution order.
