@@ -14,18 +14,24 @@ body {
   }
 }
 
-.sky {
+/* Sized to the large viewport so the sky reaches the screen's bottom edge behind Safari's
+   toolbar, instead of stopping at the top of it. */
+.sky,
+.sky-fallback {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
+  height: 100lvh;
+}
+
+.sky {
   display: block;
 }
 
 /* Shown only when WebGPU is unavailable: a still dusk that fades in like the real thing. */
 .sky-fallback {
-  position: fixed;
-  inset: 0;
   background:
     radial-gradient(120% 60% at 50% 110%, #f0a878 0%, #c77f86 22%, transparent 60%),
     linear-gradient(to top, #6a5a8e 0%, #343a6e 40%, #141a36 75%, #0a0c14 100%);

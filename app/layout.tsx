@@ -22,15 +22,16 @@ export const metadata: Metadata = {
     ),
     apple: '/apple-icon.png',
   },
+  // Added to the home screen, the sky runs edge to edge under a see-through status bar.
+  appleWebApp: { capable: true, title, statusBarStyle: 'black-translucent' },
   openGraph: { title, description, type: 'website' },
   twitter: { card: 'summary_large_image', title, description },
 }
 
+// `viewportFit: 'cover'` lets the page draw under the notch, Dynamic Island and home indicator
+// rather than inside the safe area. No theme colour: a solid one paints Safari's bars over the sky.
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fff' },
-    { media: '(prefers-color-scheme: dark)', color: '#000' },
-  ],
+  viewportFit: 'cover',
   colorScheme: 'light dark',
 }
 
