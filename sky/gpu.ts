@@ -25,7 +25,13 @@ export async function acquireGpu(canvas: HTMLCanvasElement, signal?: AbortSignal
     throw new Error('No WebGPU canvas context')
   }
   const format = navigator.gpu.getPreferredCanvasFormat()
-  context.configure({ device, format, alphaMode: 'opaque' })
+  // COPY_SRC so the edge sampler can read back the output's top and bottom rows.
+  context.configure({
+    device,
+    format,
+    alphaMode: 'opaque',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+  })
   return { device, context, format }
 }
 

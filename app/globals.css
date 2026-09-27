@@ -14,20 +14,55 @@ body {
   }
 }
 
-/* Sized to the large viewport so the sky reaches the screen's bottom edge behind Safari's
-   toolbar, instead of stopping at the top of it. */
 .sky,
 .sky-fallback {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
-  height: 100lvh;
 }
 
 .sky {
   display: block;
+}
+
+/* iOS Safari 26 paints its status bar and floating toolbar itself. Behind them it shows only the
+   document's own paint, never a fixed layer: a fixed sky stops at their edges and the bars are
+   filled with a flat colour. So there the sky is in flow, taller than the screen by a bleed at
+   each end, and the page is held scrolled by the top bleed (see `pinScroll` in the Sky
+   component), which puts sky both above and below the visible viewport, under the bars. Touch
+   panning is off, so it cannot be scrolled away. Safari still fades the bars' outer edges into
+   the page's background colour, so that follows the sky too. */
+@supports (-webkit-touch-callout: none) {
+  :root {
+    --bleed-top: 64px;
+    --bleed-bottom: 100px;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* The colour the bars fade into. The engine sets it from the sky's edges as it renders; the
+     still dusk gets one between its own. */
+  body {
+    transition: background-color 0.5s linear;
+  }
+
+  body:has(.sky-fallback) {
+    background: #1e2040;
+  }
+
+  .sky,
+  .sky-fallback {
+    position: relative;
+    inset: auto;
+    height: calc(100lvh + var(--bleed-top) + var(--bleed-bottom));
+  }
 }
 
 /* Shown only when WebGPU is unavailable: a still dusk that fades in like the real thing. */

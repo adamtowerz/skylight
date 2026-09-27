@@ -8,6 +8,7 @@ import { createCamera } from './camera'
 import { celestial } from './celestial'
 import { createClock } from './clock'
 import { bindControls, readParams } from './controls'
+import type { EdgeColors } from './edges'
 import { acquireGpu, observeCanvasSize, type Gpu } from './gpu'
 import { trackHistory } from './history'
 import { runLoop } from './loop'
@@ -24,19 +25,27 @@ export interface StartOptions {
   signal?: AbortSignal
   /** Called if the GPU device is lost; the engine has already stopped itself. */
   onLost?: () => void
+  /** Called a few times a second with the average colour of the top and bottom rows. */
+  onEdgeColors?: EdgeColors
 }
 
-/** The page's background, display-encoded: the blank first paint the sky is revealed from. */
+/**
+ * The page's background, display-encoded: the blank first paint the sky is revealed from. Read
+ * from the root, since body's may be following the sky's edges.
+ */
 function pageBackground(element: Element): Vec3 {
   const [r = 0, g = 0, b = 0] = getComputedStyle(element).backgroundColor.match(/[\d.]+/g)?.map(Number) ?? []
   return [r / 255, g / 255, b / 255]
 }
 
 /** Rejects when WebGPU is unavailable, so the caller can show a fallback. */
-export async function start(canvas: HTMLCanvasElement, { signal, onLost }: StartOptions = {}): Promise<() => void> {
+export async function start(
+  canvas: HTMLCanvasElement,
+  { signal, onLost, onEdgeColors }: StartOptions = {},
+): Promise<() => void> {
   const gpu = await acquireGpu(canvas, signal)
   try {
-    const renderer = await createRenderer(gpu)
+    const renderer = await createRenderer(gpu, onEdgeColors)
     signal?.throwIfAborted()
     return run(canvas, gpu, renderer, onLost)
   } catch (error) {
@@ -57,10 +66,10 @@ function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onL
   let outputResolution: Vec2 = [1, 1]
   let frame = 0
   let revealStart: number | undefined
-  let blankColor = pageBackground(document.body)
+  let blankColor = pageBackground(document.documentElement)
 
   const theme = matchMedia('(prefers-color-scheme: light)')
-  const onThemeChange = () => (blankColor = pageBackground(document.body))
+  const onThemeChange = () => (blankColor = pageBackground(document.documentElement))
   theme.addEventListener('change', onThemeChange)
 
   const unobserve = observeCanvasSize(canvas, device.limits.maxTextureDimension2D, (width, height) => {

@@ -5,6 +5,7 @@
  *   uniforms → transmittance → multiscattering → sky view   (atmosphere LUTs, compute)
  *            → exposure (compute)
  *            → cloud layer → scene (HDR + cloud history, render scale) → post (swap chain)
+ *                                                                     → edges (readback, optional)
  *
  * Passes are created in parallel with async pipelines, then run in order every frame. The LUTs
  * are rebuilt every frame too: moods change the air, and together they cost well under a
@@ -12,6 +13,7 @@
  * writes the other.
  */
 
+import { createEdgeSampler, type EdgeColors } from './edges'
 import type { Gpu } from './gpu'
 import type { Vec2 } from './math'
 import { lutFormat } from './passes/atmosphere'
@@ -37,7 +39,7 @@ export interface Renderer {
   destroy(): void
 }
 
-export async function createRenderer({ device, context, format }: Gpu): Promise<Renderer> {
+export async function createRenderer({ device, context, format }: Gpu, onEdgeColors?: EdgeColors): Promise<Renderer> {
   const uniforms = device.createBuffer({
     label: 'uniforms',
     size: Uniforms.size,
@@ -84,6 +86,7 @@ export async function createRenderer({ device, context, format }: Gpu): Promise<
   const init = device.createCommandEncoder({ label: 'init' })
   noise.encode(init)
   device.queue.submit([init.finish()])
+  const edges = onEdgeColors && createEdgeSampler(device, format, onEdgeColors)
 
   // Everything at render scale, recreated on resize.
   let renderTargets: GPUTexture[] = []
@@ -116,10 +119,13 @@ export async function createRenderer({ device, context, format }: Gpu): Promise<
     render(data) {
       if (!views) return
       device.queue.writeBuffer(uniforms, 0, data)
-      const targets = { ...views, output: context.getCurrentTexture().createView() }
+      const output = context.getCurrentTexture()
+      const targets = { ...views, output: output.createView() }
       const encoder = device.createCommandEncoder({ label: 'frame' })
       for (const pass of graph) pass.encode(encoder, targets)
+      edges?.encode(encoder, output)
       device.queue.submit([encoder.finish()])
+      edges?.submitted()
       // What was accumulated this frame is the history of the next.
       views = { ...views, history: views.accumulated, accumulated: views.history }
     },
@@ -128,6 +134,7 @@ export async function createRenderer({ device, context, format }: Gpu): Promise<
       for (const texture of [...renderTargets, noiseVolume, transmittanceLut, multiscatteringLut, skyViewLut]) texture.destroy()
       exposure.destroy()
       uniforms.destroy()
+      edges?.destroy()
       context.unconfigure()
     },
   }
