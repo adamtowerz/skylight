@@ -26,25 +26,22 @@ body {
   display: block;
 }
 
-/* iOS Safari 26 paints its status bar and floating toolbar itself. Behind them it shows only the
-   document's own paint, never a fixed layer: a fixed sky stops at their edges and the bars are
-   filled with a flat colour. So there the sky is in flow, taller than the screen by a bleed at
-   each end, and the page is held scrolled by the top bleed (see `pinScroll` in the Sky
-   component), which puts sky both above and below the visible viewport, under the bars. Touch
-   panning is off, so it cannot be scrolled away. Safari still fades the bars' outer edges into
-   the page's background colour, so that follows the sky too. */
+/* Mobile Safari 26 paints its status bar and floating toolbar itself. Behind them it shows only
+   the document's own paint, never a fixed layer, and nothing at all above the document while it
+   sits at the top. So there the sky is in flow, taller than the screen by a bleed at each end,
+   and the page is held scrolled by the top bleed (see `pinScroll` in the Sky component): sky lies
+   both above and below the visible viewport, under the bars. The root does not scroll, so only
+   that offset ever moves it. Safari fades the bars' outer edges into the page's background
+   colour, so that follows the sky too. */
 @supports (-webkit-touch-callout: none) {
   :root {
     --bleed-top: 64px;
     --bleed-bottom: 100px;
-    overscroll-behavior: none;
-    touch-action: none;
   }
 
   html,
   body {
     height: auto;
-    overflow: visible;
   }
 
   /* The colour the bars fade into. The engine sets it from the sky's edges as it renders; the

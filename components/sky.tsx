@@ -8,7 +8,7 @@ import type { Vec3 } from '@/sky/math'
  * static blank page paints instantly; it reveals itself in-shader once its first frame is
  * ready. Without WebGPU (or if the GPU is lost) a still CSS dusk fades in instead.
  *
- * On iOS Safari the page is held scrolled so the sky runs under the browser's bars, and the
+ * On Mobile Safari the page is held scrolled so the sky runs under the browser's bars, and the
  * page's background follows the sky's edges, which is the colour those bars fade into (see
  * globals.css).
  */
@@ -71,22 +71,16 @@ function clearPageColor() {
 }
 
 /**
- * Holds the page scrolled by the top bleed so the sky reaches under iOS Safari's status bar (see
- * globals.css). Everywhere else the bleed is unset and this does nothing. Scrolling is re-pinned
- * whenever it moves, as when a tap on the status bar scrolls the page to the top.
+ * Holds the page scrolled by the top bleed so the sky reaches under Mobile Safari's status bar
+ * (see globals.css). The root does not scroll, so this offset is the only one; it is set again
+ * on resize, which can reset it. Everywhere else the bleed is unset and this does nothing.
  */
 function pinScroll() {
   const bleed = bleedTop()
   if (!bleed) return
 
-  const pin = () => {
-    if (scrollY !== bleed) scrollTo({ top: bleed, behavior: 'instant' })
-  }
+  const pin = () => scrollTo({ top: bleed, behavior: 'instant' })
   pin()
-  addEventListener('scroll', pin, { passive: true })
   addEventListener('resize', pin)
-  return () => {
-    removeEventListener('scroll', pin)
-    removeEventListener('resize', pin)
-  }
+  return () => removeEventListener('resize', pin)
 }
