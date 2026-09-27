@@ -6,15 +6,20 @@ const title = 'Skylight'
 const description = 'Lie back on the grass and watch the sky.'
 
 // The share image comes from `opengraph-image.jpg` beside this file. Icons are listed here because
-// the favicon follows the device theme — a day sky on light tabs, dusk on dark.
+// the favicon follows the device theme: crops of the renderer's own sky, day on light tabs and
+// dusk on dark.
 export const metadata: Metadata = {
   title,
   description,
   icons: {
-    icon: [
-      { url: '/icon-light.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: dark)' },
-    ],
+    icon: (['light', 'dark'] as const).flatMap((scheme) =>
+      [32, 192].map((size) => ({
+        url: `/icon-${scheme}-${size}.png`,
+        sizes: `${size}x${size}`,
+        type: 'image/png',
+        media: `(prefers-color-scheme: ${scheme})`,
+      })),
+    ),
     apple: '/apple-icon.png',
   },
   openGraph: { title, description, type: 'website' },
