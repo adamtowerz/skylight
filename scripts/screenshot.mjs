@@ -8,11 +8,11 @@
  * Several `--wait` values (e.g. `--wait 0,1500,5000`) capture a sequence from one page load,
  * suffixing the output name with the elapsed milliseconds. `--dpr 2` renders at a retina device
  * pixel ratio (the PNG is then twice the size). Console errors are echoed, and the run fails if
- * the page reports no WebGPU adapter.
+ * the page reports no WebGPU adapter. For a matrix of hours and moods, see `shots.mjs`.
  */
 
 import { parseArgs } from 'node:util'
-import { chromium } from 'playwright'
+import { launchChrome, list, openPage, requireWebGpu } from './browser.mjs'
 
 const { values } = parseArgs({
   options: {
@@ -26,29 +26,13 @@ const { values } = parseArgs({
   },
 })
 
-const [width, height] = values.size.split('x').map(Number)
-const waits = values.wait.split(',').map(Number).sort((a, b) => a - b)
-
-const browser = await chromium.launch({
-  channel: 'chrome',
-  headless: !values.headed,
-  args: ['--enable-unsafe-webgpu', '--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=metal'],
-})
+const waits = list(values.wait).map(Number).sort((a, b) => a - b)
+const browser = await launchChrome({ headed: values.headed })
 
 try {
-  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: Number(values.dpr), colorScheme: values.theme })
-  page.on('console', (message) => {
-    if (message.type() === 'error' || message.type() === 'warning') console.log(`[${message.type()}] ${message.text()}`)
-  })
-  page.on('pageerror', (error) => console.log(`[pageerror] ${error.message}`))
-
+  const page = await openPage(browser, values)
   await page.goto(values.url, { waitUntil: 'load' })
-  const adapter = await page.evaluate(async () => {
-    const found = await navigator.gpu?.requestAdapter()
-    return found ? `${found.info.vendor} ${found.info.architecture}`.trim() || 'available' : null
-  })
-  if (!adapter) throw new Error('No WebGPU adapter in this browser; try --headed')
-  console.log(`WebGPU adapter: ${adapter}`)
+  console.log(`WebGPU adapter: ${await requireWebGpu(page)}`)
 
   const start = Date.now()
   for (const wait of waits) {

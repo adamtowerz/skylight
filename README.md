@@ -101,24 +101,37 @@ npm run build        # the page must stay static (○)
 npm start
 ```
 
-`scripts/screenshot.mjs` opens a URL in the installed Google Chrome (through Playwright, with
-WebGPU enabled), waits, and saves a PNG. It fails fast if the browser has no WebGPU adapter and
-echoes console errors.
+### Looking at the result
+
+The scripts in `scripts/` drive the installed Google Chrome through Playwright with WebGPU on;
+they fail fast without a WebGPU adapter and echo console errors. Serve a build first
+(`npm run build && npx next start -p 3417`).
 
 ```sh
-npm run build && npm start &
-node scripts/screenshot.mjs --url 'http://localhost:3000/?hour=18.7&speed=0&mood=2' \
-  --out sunset.png --wait 5000
+# One page, optionally a sequence from one load (writes reveal-0ms.png, …)
+node scripts/screenshot.mjs --url 'http://localhost:3417/?hour=18.7&speed=0&mood=2' --out sunset.png
+node scripts/screenshot.mjs --url 'http://localhost:3417/?speed=0' --out reveal.png --wait 0,1500,5000
+#   --size 390x844 (default 1440x900), --dpr 2, --theme light (default dark), --headed
 
-# A sequence from one page load, e.g. to check the reveal: writes reveal-0ms.png, …
-node scripts/screenshot.mjs --url 'http://localhost:3000/?speed=0' --out reveal.png --wait 0,1500,5000
+# A matrix of frozen skies, one PNG each: h18.8-m1-dpr2.png, …
+node scripts/shots.mjs --base http://localhost:3417 --hours 7,13,18.3,18.8,19.1,23 \
+  --moods 0,1 --dpr 1,2 --out .context/shots/after
 
-# Options: --size 390x844 (default 1440x900), --dpr 2 (retina), --theme light (default dark),
-#          --headed (if headless has no GPU)
+# A "before" from any git ref, built in a temporary worktree and served on :3418
+scripts/baseline.sh HEAD 3418
+
+# Labelled sheets: before | after | diff ×8 per shared file name; crops; plain grids
+node scripts/sheet.mjs --before .context/shots/before --after .context/shots/after --diff 8 \
+  --out .context/sheets/compare.jpg
+node scripts/sheet.mjs --before … --after … --crop 500,600,400,250 --scale 2 --out detail.jpg
+node scripts/sheet.mjs 'noon=a.png' b.png --cols 2 --out grid.jpg
+
+# GPU time per pass, from timestamp queries injected into the page
+node scripts/frametime.mjs --url 'http://localhost:3417/?hour=18.8&speed=0'
 ```
 
-Use `?speed=0` for reproducible frames: the sun, moon and clouds hold still; only the grain and
-the camera's slow breathing move.
+`?speed=0` freezes the sun, moon and clouds, and `shots.mjs` also asks for reduced motion, which
+stills the camera's breathing: only the film grain differs between two runs.
 
 ### Adding a pass
 
