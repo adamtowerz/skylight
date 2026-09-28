@@ -101,7 +101,7 @@ report.
   (and dark). The 0 ms frame must be exactly `#fff` (light) / `#000` (dark), no grain; 1500 ms
   a soft radial opening; 5000 ms the settled sky.
 - **Motion**: `--params 'speed=20' --motion --wait 2000,6000,10000` (or `speed=1`): clouds must
-  drift without smearing, ghosting or shimmer; exposure must not pump. Scrubbing (arrow keys)
+  drift without smearing, ghosting or shimmer; exposure must not pump. Scrubbing (scroll, arrow keys)
   resets the TAA history by design.
 - **Frame time**: `node scripts/frametime.mjs --url 'http://localhost:3417/?hour=18.8&speed=0&mood=1'`
   prints median/p90 GPU ms per pass (timestamp queries injected from outside the engine). Budget

@@ -15,6 +15,7 @@ import { runLoop } from './loop'
 import { smoothstep, type Vec2, type Vec3 } from './math'
 import { moodCycle } from './moods'
 import { createRenderer, type Renderer } from './renderer'
+import { openingMoment } from './seeds'
 import { fillUniforms, Uniforms } from './uniforms'
 
 /** How long the eyes take to open once the first frame is ready. */
@@ -56,8 +57,9 @@ export async function start(
 
 function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onLost?: () => void) {
   const params = readParams(location.search)
-  const clock = createClock(params)
-  const moodAt = moodCycle(clock.hours, params.mood)
+  const opening = openingMoment(params)
+  const clock = createClock({ hours: opening.hours, speed: params.speed })
+  const moodAt = moodCycle(opening.hours, opening.mood)
   const camera = createCamera(matchMedia('(prefers-reduced-motion: reduce)').matches)
   const history = trackHistory()
   const uniforms = Uniforms.create()

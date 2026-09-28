@@ -35,8 +35,9 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
 
 ## Controls
 
-`?hour=18.8` start hour (default 17.6) · `?speed=0` freeze the clock · `?mood=0..4`
-(goldenHaze, violetDusk, emberSky, clear, softOvercast) · ←/→ ±15 min · space pause. Sunset is
+`?hour=18.8` start hour (without it, a random opening moment from `sky/seeds.ts`; `?seed=n`
+picks one) · `?speed=0` freeze the clock · `?mood=0..4` (goldenHaze, violetDusk, emberSky,
+clear, softOvercast) · scroll/drag scrubs time · ←/→ ±15 min · space pause. Sunset is
 18:52; golden hour ≈ 18.0–18.8; afterglow 18.9–19.4; blue hour 19.3–19.8.
 
 ## Gotchas

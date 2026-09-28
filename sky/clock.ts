@@ -9,7 +9,7 @@ import { sunElevation } from './celestial'
 /** Real seconds per simulated hour, near the horizon and away from it. */
 const lingerSecondsPerHour = 45
 const hurrySecondsPerHour = 9
-/** How quickly a keyboard nudge eases in, per second. */
+/** How quickly a nudge or scrub eases in, per second. */
 const nudgeRate = 4
 
 export interface Clock {
@@ -21,11 +21,17 @@ export interface Clock {
   advance(dt: number): void
   /** Eases the clock forward or back by `hours`. */
   nudge(hours: number): void
+  /**
+   * Eases the clock forward or back by `seconds` at its natural pace, so a steady scroll
+   * lingers through twilight just as the clock does.
+   */
+  scrub(seconds: number): void
   togglePause(): void
 }
 
 export interface ClockOptions {
-  hour?: number
+  /** Simulated hours since midnight of day zero to start at. */
+  hours: number
   /** Multiplier on the natural pace; 0 freezes time. */
   speed?: number
 }
@@ -59,8 +65,8 @@ export function naturalSeconds(hours: number) {
   return days * secondsPerDay + lerp(timeline[index], timeline[index + 1], step - index)
 }
 
-export function createClock({ hour = 17.6, speed = 1 }: ClockOptions = {}): Clock {
-  let hours = hour
+export function createClock({ hours: start, speed = 1 }: ClockOptions): Clock {
+  let hours = start
   let pendingNudge = 0
   let paused = false
 
@@ -83,6 +89,9 @@ export function createClock({ hour = 17.6, speed = 1 }: ClockOptions = {}): Cloc
     },
     nudge(delta) {
       pendingNudge += delta
+    },
+    scrub(seconds) {
+      pendingNudge += seconds / secondsPerHour(hours + pendingNudge)
     },
     togglePause() {
       paused = !paused

@@ -79,14 +79,16 @@ clock scrubs the clouds.
 
 ## Controls
 
-| Input        | Effect                                 |
-| ------------ | -------------------------------------- |
-| `←` / `→`    | ease time back / forward by 15 minutes |
-| `space`      | pause / resume time                    |
-| pointer      | a touch of parallax                    |
-| `?hour=18.4` | start at this hour (default 17.6)      |
-| `?speed=0`   | time multiplier; 0 freezes the clock   |
-| `?mood=2`    | which mood the first twilight shows    |
+| Input          | Effect                                                   |
+| -------------- | -------------------------------------------------------- |
+| scroll / drag  | wind time forward / back, slower through twilight        |
+| `←` / `→`      | ease time back / forward by 15 minutes                   |
+| `space`        | pause / resume time                                      |
+| pointer        | a touch of parallax                                      |
+| `?hour=18.4`   | start at this hour (default: a random seed)              |
+| `?seed=3`      | start at one of the opening moments in `sky/seeds.ts`    |
+| `?speed=0`     | time multiplier; 0 freezes the clock                     |
+| `?mood=2`      | which mood the first twilight shows                      |
 
 Moods, in order: `goldenHaze`, `violetDusk`, `emberSky`, `clear`, `softOvercast`. The sun sets at
 18:52; golden hour is about 18.0–18.8, the pink and violet afterglow 18.9–19.4.

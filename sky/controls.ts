@@ -1,17 +1,24 @@
 /**
- * Invisible controls. URL parameters set the scene up (`?hour=18.4&speed=0&mood=2`);
- * ←/→ nudge time by a quarter hour, space pauses, and the pointer adds a touch of parallax.
+ * Invisible controls. URL parameters set the scene up (`?hour=18.4&speed=0&mood=2`, or
+ * `?seed=3` for one of the opening moments); scrolling (or dragging on touch screens) winds
+ * time back and forth, ←/→ nudge it by a quarter hour, space pauses, and the pointer adds a
+ * touch of parallax.
  */
 
 import type { Camera } from './camera'
 import type { Clock } from './clock'
 
 const nudgeHours = 0.25
+/** Natural seconds of clock per pixel scrolled: a wheel notch is a few minutes at dusk, a swipe an hour. */
+const scrubSecondsPerPixel = 0.02
+/** Pixels per line, for wheels that scroll by lines. */
+const pixelsPerLine = 16
 
 export interface Params {
   hour?: number
   speed?: number
   mood?: number
+  seed?: number
 }
 
 function numberParam(search: URLSearchParams, name: string) {
@@ -22,11 +29,15 @@ function numberParam(search: URLSearchParams, name: string) {
 
 export function readParams(query: string): Params {
   const search = new URLSearchParams(query)
-  const mood = numberParam(search, 'mood')
+  const integer = (name: string) => {
+    const value = numberParam(search, name)
+    return value === undefined ? undefined : Math.round(value)
+  }
   return {
     hour: numberParam(search, 'hour'),
     speed: numberParam(search, 'speed'),
-    mood: mood === undefined ? undefined : Math.round(mood),
+    mood: integer('mood'),
+    seed: integer('seed'),
   }
 }
 
@@ -44,10 +55,38 @@ export function bindControls(target: Window, clock: Clock, camera: Camera): () =
     camera.point((event.clientX / target.innerWidth) * 2 - 1, (event.clientY / target.innerHeight) * 2 - 1)
   }
 
+  // Scrolling down (content moving up) runs time forward, like scrolling down a timeline.
+  const scrub = (pixels: number) => clock.scrub(pixels * scrubSecondsPerPixel)
+
+  function onWheel(event: WheelEvent) {
+    const unit = [1, pixelsPerLine, target.innerHeight][event.deltaMode] ?? 1
+    scrub(event.deltaY * unit)
+    event.preventDefault()
+  }
+
+  let touchY: number | undefined
+  function onTouchStart(event: TouchEvent) {
+    touchY = event.touches.length === 1 ? event.touches[0].clientY : undefined
+  }
+  function onTouchMove(event: TouchEvent) {
+    if (touchY === undefined || event.touches.length !== 1) return
+    const y = event.touches[0].clientY
+    scrub(touchY - y)
+    touchY = y
+    event.preventDefault()
+  }
+
+  const active = { passive: false }
   target.addEventListener('keydown', onKeyDown)
   target.addEventListener('pointermove', onPointerMove)
+  target.addEventListener('wheel', onWheel, active)
+  target.addEventListener('touchstart', onTouchStart)
+  target.addEventListener('touchmove', onTouchMove, active)
   return () => {
     target.removeEventListener('keydown', onKeyDown)
     target.removeEventListener('pointermove', onPointerMove)
+    target.removeEventListener('wheel', onWheel)
+    target.removeEventListener('touchstart', onTouchStart)
+    target.removeEventListener('touchmove', onTouchMove)
   }
 }
