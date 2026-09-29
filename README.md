@@ -55,7 +55,7 @@ post              scene target, exposure                 swap chain
 Every pass reads the same `Uniforms` buffer at `@group(0) @binding(0)`. Passes live in
 `sky/passes/`, one file each, and own only their pipelines and bind groups; the renderer owns every
 resource that flows between them, so the data flow reads top to bottom in `renderer.ts`. The whole
-frame takes about 5 ms of GPU time at 1440 × 900 on an Apple M1 Pro, a third of it the cloud march.
+frame takes about 5 ms of GPU time at 1440 × 900 on an Apple M1 Pro, a quarter of it the cloud march.
 
 ## The physics
 
@@ -68,9 +68,11 @@ height and Ångström exponent, Mie anisotropy, ozone (the violet of the blue ho
 spectral slope — plus cloud cover. Colour comes from amplified physics, never from paint.
 
 **Clouds.** A raymarched cumulus shell at 1.5–3.5 km sits in front of a cirrus sheet at 8 km
-(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). Where the view ray first finds a heap it steps back
-and finds its edge again in steps four times finer, so the heaps' sharp edges never fall into
-contour lines. Sunlight reaches every sample through the transmittance LUT, so after the sun sets at
+(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). A heap turns opaque within far less than a step of
+the view ray, so between two samples the march takes the field to run linearly and integrates the
+cloud's sharp threshold along the step exactly, and lights each step where the light it sends to
+the eye comes from on average (near the front of a thick step): heap edges move smoothly across
+the steps instead of falling into contour lines, at no extra samples. Sunlight reaches every sample through the transmittance LUT, so after the sun sets at
 the ground the clouds keep catching it, gold, then rose, then the cirrus alone glows pink. Direct
 light uses a short light march, a dual-lobe phase function (the silver lining) and
 multiple-scattering octaves after Wrenninge et al. 2013, which reach deeper under a grazing sun so
@@ -98,7 +100,12 @@ mood's haze), meets the sky with a film-like shoulder, and fades out as the sun 
 
 **Time.** As in Horizon Zero Dawn, the clouds are marched at only one pixel of every 2 × 2 cell
 each frame, taking turns in Bayer order (`interleave.ts`), and every pixel keeps an average of
-its own jittered marches over about ten turns (`temporal.wgsl`). Everything is at infinity, so
+its own jittered marches over about ten turns (`temporal.wgsl`). The jitter is a blue-noise mask
+over the cells, made by void and cluster on the CPU at startup (`bluenoise.ts`), plus an offset
+per frame that strides each pixel's jitter by the golden ratio at every turn and sets the four
+pixels of a cell a quarter apart: each frame's marches are spread evenly across the sky and each
+pixel's evenly over time, so the average converges fast and what noise is left is fine-grained.
+Everything is at infinity, so
 last frame's average is found by carrying this pixel's direction back along the wind and through
 last frame's camera; it is then clipped to the spread of this frame's marches around the pixel,
 so churning clouds never ghost. While time is scrubbed the past is not trusted, and the pixels

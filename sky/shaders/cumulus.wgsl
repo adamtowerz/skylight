@@ -2,7 +2,7 @@
 // (Schneider 2015; Hillaire 2016). Density is the noise volume's Perlin–Worley heaps, masked by
 // a low-frequency coverage ("weather") field and shaped by height: flat bases where rising air
 // reaches its condensation level, rounded tops that climb higher where coverage is thicker. Finer
-// Worley noise erodes the edges, wispy below and billowy above. Each sample is lit by a short
+// Worley noise erodes the edges, wispy below and billowy above. Each step is lit by a short
 // march toward the key light, with multiple scattering after Wrenninge et al. 2013 that reaches
 // deeper under a grazing sun (sunset heaps glow through), and by skylight and grass light that
 // fade with depth into the heap: shaded sides turn sky-blue, and thick cores go dark enough to
@@ -32,19 +32,20 @@ const EXTINCTION = 36.0;
 // within a hundred metres of its edge, far less than a step, so where the ray enters one matters
 // most, and marched at a fixed stride it falls on steps at nearly the same heights across
 // neighbouring pixels: contour lines across the heaps, which neither the jitter nor the temporal
-// average quite hides. So where a step first finds cloud, the march steps back and looks for the
-// edge again in REFINE times finer steps, sampling only density, and strides on from there.
+// average quite hides. So the field is taken to run linearly between samples and the threshold is
+// integrated along each step exactly, and each step is lit where the light it scatters toward the
+// eye comes from on average: a heap's opacity and light then change smoothly as its edge moves
+// across the steps, and even a step that only grazes a heap sees it. That needs no extra samples,
+// where searching for each edge in finer steps cost every ray marching in lockstep with one that
+// searched (on the GPU, all of a group of neighbouring pixels).
 const MIN_STEPS = 40.0;
 const MAX_STEPS = 80.0;
-const REFINE = 4u;
-// Each heap entered costs REFINE samples more, none of them lit.
-const MAX_SAMPLES = 2u * u32(MAX_STEPS);
 const MAX_MARCH = 30.0; // km
 // Stop once so little of the background shows through.
 const OPAQUE = 0.01;
 
 // Light ray: quadratically lengthening steps, dense near the sample where detail matters.
-const LIGHT_STEPS = 6u;
+const LIGHT_STEPS = 5u;
 const LIGHT_REACH = 2.0; // km
 
 // Water droplets: a strong forward lobe (the silver lining toward the sun) and a weak backward
@@ -104,40 +105,68 @@ fn domeTop(cover: f32) -> f32 {
   return mix(0.45, 1.0, cover);
 }
 
+// Height fraction over which the heaps' flat bases fill in.
+const BASE = 0.06;
+
 // Flat base, then a rounded dome.
 fn heightProfile(h: f32, cover: f32) -> f32 {
   let top = domeTop(cover);
-  return smoothstep(0.0, 0.06, h) * (1.0 - smoothstep(0.6 * top, top, h));
+  return smoothstep(0.0, BASE, h) * (1.0 - smoothstep(0.6 * top, top, h));
 }
 
-// Density in [0, 1] at a point. The heaps, shaped by height, form a continuous field; detail
-// displaces it (wispy below, billowy above) before a sharp threshold turns it into cloud, so the
-// detail carves the boundary itself. The light march skips the detail and takes its mean.
-fn cumulusDensity(p: vec3f, cover: f32, detailed: bool) -> f32 {
+// How far past the threshold of cloud the field lies at a point: negative in clear air, and the
+// cloud whole BOUNDARY past it. The heaps, shaped by height, form a continuous field; detail
+// displaces it (wispy below, billowy above) before the sharp threshold turns it into cloud, so the
+// detail carves the boundary itself. The light march skips the detail and takes its mean, and so
+// does the view march where the detail could not carry the field across the threshold or out of
+// the boundary: there the air is clear, or the cloud whole, whatever the detail says.
+fn cumulusField(p: vec3f, cover: f32, detailed: bool) -> f32 {
   let h = heightFraction(p);
   let profile = heightProfile(h, cover);
   let threshold = 1.0 - cover;
-  // The deepest the detail can push the field up; below this nothing can become cloud.
-  let reachable = threshold - 0.5 * EROSION;
-  if (profile <= reachable) {
-    return 0.0;
+  let displacement = 0.5 * EROSION; // the most the detail moves the field either way
+  // The heaps never exceed their profile, so where even the detail could not carry it across the
+  // threshold the noise is not read.
+  if (profile + displacement <= threshold) {
+    return profile - threshold;
   }
   let position = cloudSpace(p);
   let shape = sampleNoise(position / SHAPE_TILE);
   let eroded = remap(shape.r, 0.5 * dot(shape.gba, DETAIL_WEIGHTS), 1.0, 0.0, 1.0);
   let heaps = saturate(remap(eroded, HEAPS_RANGE.x, HEAPS_RANGE.y, 0.0, 1.0)) * profile;
-  if (heaps <= reachable) {
-    return 0.0;
+  if (!detailed || heaps + displacement <= threshold || heaps - displacement >= threshold + BOUNDARY) {
+    return heaps - threshold;
   }
-  var billows = 0.5;
-  if (detailed) {
-    let churn = vec3f(0.0, DETAIL_CHURN * u.cloudEvolution, 0.0);
-    let detail = dot(sampleNoise((position + churn) / DETAIL_TILE).gba, DETAIL_WEIGHTS);
-    billows = mix(detail, 1.0 - detail, saturate(h * 4.0));
+  let churn = vec3f(0.0, DETAIL_CHURN * u.cloudEvolution, 0.0);
+  let detail = dot(sampleNoise((position + churn) / DETAIL_TILE).gba, DETAIL_WEIGHTS);
+  let billows = mix(detail, 1.0 - detail, saturate(h * 4.0));
+  return heaps + EROSION * (0.5 - billows) - threshold;
+}
+
+// Density at the base relative to the body, at a point.
+fn baseDensity(p: vec3f) -> f32 {
+  return mix(BASE_DENSITY, 1.0, saturate(heightFraction(p) * 3.0));
+}
+
+// Density in [0, 1] at a point.
+fn cumulusDensity(p: vec3f, cover: f32, detailed: bool) -> f32 {
+  return saturate(cumulusField(p, cover, detailed) / BOUNDARY) * baseDensity(p);
+}
+
+// ∫ saturate(f / BOUNDARY) df: the threshold's ramp, integrated.
+fn thresholdIntegral(field: f32) -> f32 {
+  let ramp = saturate(field / BOUNDARY);
+  return BOUNDARY * 0.5 * ramp * ramp + max(field - BOUNDARY, 0.0);
+}
+
+// The mean of saturate(f / BOUNDARY) along a step over which the field runs linearly from `a` to
+// `b`: the threshold, which a heap crosses in far less than a step, integrated exactly between
+// two samples instead of taken at one.
+fn meanCloud(a: f32, b: f32) -> f32 {
+  if (abs(b - a) < 1e-4) {
+    return saturate(0.5 * (a + b) / BOUNDARY);
   }
-  let field = heaps + EROSION * (0.5 - billows);
-  let density = saturate(remap(field, threshold, threshold + BOUNDARY, 0.0, 1.0));
-  return density * mix(BASE_DENSITY, 1.0, saturate(h * 3.0));
+  return (thresholdIntegral(b) - thresholdIntegral(a)) / (b - a);
 }
 
 // Optical depth from a sample toward the key light, through the bulk of the cloud. Samples are
@@ -185,13 +214,23 @@ fn scattering(opticalDepth: f32, cosTheta: f32, octaveReach: f32) -> f32 {
   return result * powder;
 }
 
+// Where along a uniform step of optical depth τ the light scattered toward the eye comes from on
+// average, as a share of the step: ∫ s e^(−τs) ds / ∫ e^(−τs) ds over [0, 1], which is
+// 1/τ − 1/(e^τ − 1): the middle of a thin step, and ever nearer the front of a thick one.
+fn meanScatteringDepth(tau: f32) -> f32 {
+  if (tau < 0.1) {
+    return 0.5 - tau / 12.0; // the same, without the cancellation
+  }
+  return 1.0 / tau - 1.0 / (exp(tau) - 1.0);
+}
+
 // rgb: radiance toward the eye; a: transmittance.
 fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
   let r = observerRadius();
   let enter = raySphere(r, dir.y, cloudBase()).y;
   let leave = min(raySphere(r, dir.y, u.bottomRadius + u.cloudTop).y, enter + MAX_MARCH);
-  let coarse = (leave - enter) / mix(MAX_STEPS, MIN_STEPS, saturate(dir.y));
-  let fineLength = coarse / f32(REFINE);
+  let steps = mix(MAX_STEPS, MIN_STEPS, saturate(dir.y));
+  let stepLength = (leave - enter) / steps;
   let eye = vec3f(0.0, r, 0.0);
   let cosTheta = dot(dir, lighting.keyDirection);
   let octaveReach = mix(GRAZING_OCTAVE_REACH, OCTAVE_REACH, smoothstep(GRAZING.x, GRAZING.y, lighting.keyDirection.y));
@@ -199,50 +238,55 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
   var radiance = vec3f(0.0);
   var seen = 1.0; // transmittance from the eye to the current sample
   var depth = 0.0; // opacity-weighted distance, for aerial perspective
-  var t = enter + jitter * coarse;
-  var inside = false; // the last sample was in cloud
-  var fineSteps = 0u; // fine steps left toward an edge just found
-  for (var i = 0u; i < MAX_SAMPLES && t < leave; i++) {
+  var lastField = 0.0; // how far past the threshold the last sample lay
+  for (var i = 0.0; i < steps; i += 1.0) {
+    let t = enter + (i + jitter) * stepLength;
     let p = eye + dir * t;
     let cover = coverage(cloudSpace(p));
-    let density = cumulusDensity(p, cover, true);
-    let entering = !inside && density > 0.0;
-    inside = density > 0.0;
-    if (entering && fineSteps == 0u) {
-      // The cloud begins somewhere since the last, clear, coarse step: look for it again finely.
-      t += fineLength - coarse;
-      fineSteps = REFINE;
-      inside = false;
+    let field = cumulusField(p, cover, true);
+    let before = lastField;
+    lastField = field;
+    if (field <= 0.0 && before <= 0.0) {
       continue;
     }
-    if (!inside) {
-      t += select(coarse, fineLength, fineSteps > 1u);
-      fineSteps = select(0u, fineSteps - 1u, fineSteps > 0u);
-      continue;
-    }
-    fineSteps = 0u;
-    let extinction = density * EXTINCTION * u.cloudDensity;
-    let keyLight = lighting.keyIlluminance * transmittanceAt(p, lighting.keyDirection);
-    // Each view step strides the light march's jitter by the golden ratio, so its error averages
-    // out along the ray instead of repeating the pixel's pattern.
-    let lightDepth = opticalDepthToLight(p, lighting.keyDirection, cover, fract(jitter + f32(i) * GOLDEN_RATIO));
+    // The step since the last sample, with the field taken to run linearly along it: its optical
+    // depth, and the part of it in cloud, which where it enters or leaves a heap begins or ends
+    // where the field crosses the threshold.
+    let span = min(stepLength, t - enter);
+    let cloudy = max(field, before);
+    let clear = min(field, before);
+    let inCloud = select(span, span * cloudy / (cloudy - clear), clear < 0.0);
+    let start = select(t - inCloud, t - span, field <= 0.0);
+    let opticalDepth = meanCloud(before, field) * baseDensity(p) * EXTINCTION * u.cloudDensity * span;
+    let extinction = opticalDepth / max(inCloud, 1e-6);
+    // The step is lit where the light it sends toward the eye comes from on average, which the
+    // cloud in front of it pulls toward the step's start: a heap's rim, not its inside, catches
+    // the light the eye sees there.
+    let lit = start + inCloud * meanScatteringDepth(opticalDepth);
+    let q = eye + dir * lit;
+    let keyLight = lighting.keyIlluminance * transmittanceAt(q, lighting.keyDirection);
+    // The light march's jitter strides by the golden ratio per step's length along the ray, so its
+    // error averages out along the ray instead of repeating the pixel's pattern. It strides with
+    // where the step is lit, not with the step's number, which changes where an edge crosses a
+    // sample and would print the jump in the light march's error as a contour line.
+    let lightJitter = fract(jitter + GOLDEN_RATIO * (lit - enter) / stepLength);
+    let lightDepth = opticalDepthToLight(q, lighting.keyDirection, cover, lightJitter);
     let direct = keyLight * scattering(lightDepth, cosTheta, octaveReach);
     // Ambient: skylight from above and grass light from below, blended by height and each dimmed
     // by the cloud it diffuses through, plus skylight from the sides.
-    let h = saturate(heightFraction(p));
+    let h = saturate(heightFraction(q));
     let reach = ambientReach(h, cover, extinction);
     let sky = mix(lighting.sky, lighting.shadedSky, 1.0 - exp(-lightDepth / SHADE_DEPTH));
     let ambient = mix(mix(lighting.ground * reach.y, sky * reach.x, sqrt(h)), sky, SIDE_SKYLIGHT);
     // Energy-conserving integration over the step (Hillaire 2016); droplets barely absorb, so
     // scattering ≈ extinction and the in-scattered light is simply (direct + ambient) × opacity.
-    let opacity = 1.0 - exp(-extinction * coarse);
+    let opacity = 1.0 - exp(-opticalDepth);
     radiance += seen * opacity * (direct + ambient);
     depth += seen * opacity * t;
     seen *= 1.0 - opacity;
     if (seen < OPAQUE) {
       break;
     }
-    t += coarse;
   }
   let layer = vec4f(radiance, seen);
   return throughAir(layer, dir, depth / max(1.0 - seen, 1e-4));

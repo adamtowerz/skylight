@@ -91,7 +91,11 @@ fn throughAir(layer: vec4f, dir: vec3f, distance: f32) -> vec4f {
 // [0, 1) offsets the raymarch per pixel, trading banding for fine noise that the grain hides.
 fn clouds(dir: vec3f, jitter: f32) -> vec4f {
   let lighting = cloudLighting();
-  let high = cirrus(dir, lighting);
   let low = cumulus(dir, jitter, lighting);
+  // Behind an opaque heap the cirrus cannot show.
+  if (low.a < OPAQUE) {
+    return low;
+  }
+  let high = cirrus(dir, lighting);
   return vec4f(low.rgb + low.a * high.rgb, low.a * high.a);
 }

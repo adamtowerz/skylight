@@ -5,7 +5,9 @@
  * between the clouds.
  */
 
+import { blueNoiseEntry } from '../bluenoise'
 import atmosphere from '../shaders/atmosphere.wgsl'
+import bluenoise from '../shaders/bluenoise.wgsl'
 import camera from '../shaders/camera.wgsl'
 import cloudshadow from '../shaders/cloudshadow.wgsl'
 import common from '../shaders/common.wgsl'
@@ -25,9 +27,10 @@ export const shaftFormat: GPUTextureFormat = 'rgba16float'
 export interface ShaftInputs {
   transmittance: GPUTextureView
   cloudShadow: GPUTextureView
+  blueNoise: GPUTextureView
 }
 
-export async function createShaftPass({ device, uniforms }: PassContext, { cloudShadow, ...luts }: ShaftInputs): Promise<Pass> {
+export async function createShaftPass({ device, uniforms }: PassContext, { cloudShadow, blueNoise, ...luts }: ShaftInputs): Promise<Pass> {
   const module = shader(device, 'light shafts', [
     uniformsWgsl,
     common,
@@ -36,13 +39,14 @@ export async function createShaftPass({ device, uniforms }: PassContext, { cloud
     keylight,
     cloudshadow,
     shafts,
+    bluenoise,
     shaftlayer,
   ])
   const pipeline = await createFullscreenPipeline(device, 'light shafts', module, shaftFormat)
   const bindGroup = device.createBindGroup({
     label: 'light shafts',
     layout: pipeline.getBindGroupLayout(0),
-    entries: [uniformsEntry(uniforms), ...lutEntries(device, luts), cloudShadowEntry(cloudShadow)],
+    entries: [uniformsEntry(uniforms), ...lutEntries(device, luts), cloudShadowEntry(cloudShadow), blueNoiseEntry(blueNoise)],
   })
 
   return {

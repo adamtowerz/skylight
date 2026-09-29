@@ -112,10 +112,14 @@ report.
   where the light shafts show.
 - **Frame time**: `node scripts/frametime.mjs --url 'http://localhost:3417/?hour=18.8&speed=0&mood=1'`
   prints median/p90 GPU ms per pass (timestamp queries injected from outside the engine). Budget
-  ≲ 8 ms at 1440×900 on the M1 Pro (about 4.5 ms today: cloud layer ≈ 1.5, scene 1.0, post 0.7,
+  ≲ 8 ms at 1440×900 on the M1 Pro (about 4.5 ms today: cloud layer ≈ 1.3, scene 1.0, post 0.7,
   exposure 0.7). GPU clocks vary, and a lighter frame runs at a lower clock (every pass reads
   slower): measure before and after back to back, compare against a pass whose work did not
   change (post), and check a cloudy mood too (`mood=4`, `softOvercast`, has the most cover).
+  Apple GPUs run compute and render passes side by side, so per-pass figures overlap (one can
+  even read negative) and only the `frame` total is trustworthy. To time one pass, encode it a few
+  times over in a throwaway change and compare frame totals: the extra load also holds the clock
+  steady.
 
 ## Failure modes checklist
 

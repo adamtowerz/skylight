@@ -1,10 +1,12 @@
 /**
  * The cloud layer: cumulus and cirrus along the view ray of one pixel in every cell of the scene
- * target (`interleave.ts`), marched with a fresh jitter each time. The scene pass fills in the
- * other pixels from history and averages the noise away over frames.
+ * target (`interleave.ts`), marched with a fresh blue-noise jitter each time. The scene pass fills
+ * in the other pixels from history and averages the noise away over frames.
  */
 
+import { blueNoiseEntry } from '../bluenoise'
 import atmosphere from '../shaders/atmosphere.wgsl'
+import bluenoise from '../shaders/bluenoise.wgsl'
 import camera from '../shaders/camera.wgsl'
 import cirrus from '../shaders/cirrus.wgsl'
 import cloudlayer from '../shaders/cloudlayer.wgsl'
@@ -26,11 +28,12 @@ export interface CloudLayerInputs {
   transmittance: GPUTextureView
   skyView: GPUTextureView
   cloudNoise: GPUTextureView
+  blueNoise: GPUTextureView
 }
 
 export async function createCloudLayerPass(
   { device, uniforms }: PassContext,
-  { transmittance, skyView, cloudNoise }: CloudLayerInputs,
+  { transmittance, skyView, cloudNoise, blueNoise }: CloudLayerInputs,
 ): Promise<Pass> {
   const module = shader(device, 'cloud layer', [
     uniformsWgsl,
@@ -41,6 +44,7 @@ export async function createCloudLayerPass(
     clouds,
     cumulus,
     cirrus,
+    bluenoise,
     cloudlayer,
   ])
   const pipeline = await createFullscreenPipeline(device, 'cloud layer', module, cloudFormat)
@@ -51,6 +55,7 @@ export async function createCloudLayerPass(
       uniformsEntry(uniforms),
       ...lutEntries(device, { transmittance, skyView }),
       ...noiseEntries(device, cloudNoise),
+      blueNoiseEntry(blueNoise),
     ],
   })
 

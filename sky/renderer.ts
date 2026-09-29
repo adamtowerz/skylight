@@ -2,6 +2,7 @@
  * Owns every GPU resource that flows between passes and encodes the frame graph:
  *
  *   noise (compute, once at init)                           cloud noise volume
+ *   blue noise (CPU, once at init)                          jitter mask
  *   uniforms → transmittance → multiscattering → sky view   (atmosphere LUTs, compute)
  *            → exposure (compute)
  *            → cloud shadow (compute, the cumulus seen from the key light)
@@ -15,6 +16,7 @@
  * writes the other.
  */
 
+import { blueNoise, blueNoiseFormat, blueNoiseSize } from './bluenoise'
 import { createEdgeSampler, type EdgeColors } from './edges'
 import type { Gpu } from './gpu'
 import { cloudCell } from './interleave'
@@ -84,21 +86,31 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
   })
   const cloudShadow = shadowMap.createView()
+  const blueNoiseMask = device.createTexture({
+    label: 'blue noise',
+    size: [blueNoiseSize, blueNoiseSize],
+    format: blueNoiseFormat,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  const jitterMask = blueNoiseMask.createView()
   const shared = { device, uniforms }
 
-  const [noise, ...graph]: [ComputePass, ...Pass[]] = await Promise.all([
+  const passes = Promise.all([
     createNoisePass(shared, cloudNoise),
     createTransmittancePass(shared, transmittance),
     createMultiscatteringPass(shared, { transmittance }, multiscattering),
     createSkyViewPass(shared, { transmittance, multiscattering }, skyView),
     createExposurePass(shared, { skyView }, exposure),
     createShadowMapPass(shared, { cloudNoise }, cloudShadow),
-    createShaftPass(shared, { transmittance, cloudShadow }),
+    createShaftPass(shared, { transmittance, cloudShadow, blueNoise: jitterMask }),
     createShaftMeanPass(shared),
-    createCloudLayerPass(shared, { transmittance, skyView, cloudNoise }),
+    createCloudLayerPass(shared, { transmittance, skyView, cloudNoise, blueNoise: jitterMask }),
     createScenePass(shared, { transmittance, skyView }),
     createPostPass(shared, { exposure, format }),
   ])
+  // Generated while the pipelines compile.
+  device.queue.writeTexture({ texture: blueNoiseMask }, blueNoise(), { bytesPerRow: blueNoiseSize }, [blueNoiseSize, blueNoiseSize])
+  const [noise, ...graph]: [ComputePass, ...Pass[]] = await passes
   const init = device.createCommandEncoder({ label: 'init' })
   noise.encode(init)
   device.queue.submit([init.finish()])
@@ -149,7 +161,7 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     },
 
     destroy() {
-      for (const texture of [...renderTargets, noiseVolume, shadowMap, transmittanceLut, multiscatteringLut, skyViewLut]) {
+      for (const texture of [...renderTargets, noiseVolume, shadowMap, blueNoiseMask, transmittanceLut, multiscatteringLut, skyViewLut]) {
         texture.destroy()
       }
       exposure.destroy()

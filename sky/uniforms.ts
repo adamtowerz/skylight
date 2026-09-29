@@ -65,7 +65,7 @@ const schema = {
   cirrusAltitude: 'f32',
   cloudCell: 'f32', // side of the cells the cloud layer marches one pixel of per frame, px
   cloudPhase: 'vec2f', // the pixel of every cell marched this frame
-  cloudVisit: 'f32', // marches each pixel has had before this one: strides the cloud jitter
+  cloudJitter: 'f32', // this frame's offset of the cloud march's blue-noise jitter
 
   // Post
   exposureBias: 'f32', // stops
