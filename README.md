@@ -73,10 +73,12 @@ weather field sets how much of the sky is cloud and how tall the heaps grow, fro
 puffs to towering congestus at the hearts of its convection cells (`cloudTowers`, per mood); a
 height gradient turns Perlin–Worley heaps into domes whose own cores push their tops up; the
 condensation level cuts every base flat; Worley turrets bulge from the flanks and tops, and finer
-Worley detail frays the edges, wispy below and billowy above. Each lookup (the view ray's pixel
+Worley detail frays the edges, wispy below and billowy above, both held close to the heaps' own
+bodies so that they lobe coherent heaps rather than scatter flecks. Each lookup (the view ray's pixel
 cells, the light march's lengthening steps, the shadow map's long ones) resolves only the features
-its sample can, so none alias into sparkle as the heaps drift. The cloud is as dense as real
-cumulus, which keeps edges crisp and lets thick heaps darken their own bases and crevices. A heap turns opaque within far less than a step of
+its sample can, so none alias into sparkle as the heaps drift. Density rises from a crisp,
+translucent rim into a core as dense as real cumulus, so heaps keep soft volume yet darken their
+own bases and crevices. A heap turns opaque within far less than a step of
 the view ray, so between two samples the march takes the field to run linearly and integrates the
 cloud's sharp threshold along the step exactly, and lights each step where the light it sends to
 the eye comes from on average (near the front of a thick step): heap edges move smoothly across

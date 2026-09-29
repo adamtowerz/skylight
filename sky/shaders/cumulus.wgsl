@@ -5,13 +5,14 @@
 // cells as the mood allows), shaped by a height gradient into domes that each heap's own core
 // pushes up. The condensation level cuts every base flat; Worley turrets bulge from the flanks
 // and tops (the cauliflower), and finer Worley detail erodes the edges, wispy below and billowy
-// above. Every lookup resolves only the features its sample can, so nothing aliases into
-// sparkle as the heaps drift. The field is dense (extinction as in real cumulus), which keeps
-// edges crisp and lets thick heaps shade their own bases and crevices. Each step is lit by a short
-// march toward the key light, with multiple scattering after Wrenninge et al. 2013 that reaches
-// deeper under a grazing sun (sunset heaps glow through), and by skylight and grass light that
-// fade with depth into the heap: shaded sides turn sky-blue, and thick cores go dark enough to
-// stand out against the night.
+// above, both kept close to the heaps' own bodies so they never scatter into flecks. Every lookup
+// resolves only the features its sample can, so nothing aliases into sparkle as the heaps drift.
+// Density rises from a crisp, translucent rim into a core as dense as real cumulus, so heaps have
+// soft volume yet shade their own bases and crevices. Each step is lit by a short march toward the
+// key light, with multiple scattering after Wrenninge et al. 2013 that reaches deeper under a
+// grazing sun (sunset heaps glow through), and by skylight and grass light that fade with depth
+// into the heap: shaded sides turn sky-blue, and thick cores go dark enough to stand out against
+// the night.
 
 // Horizontal extent of one tile of the noise volume, km: the heaps, their detail, the weather.
 const SHAPE_TILE = 5.0;
@@ -22,9 +23,13 @@ const WEATHER_TILE = 34.0;
 // billows instead of the same smooth dome.
 const HEAPS_RANGE = vec2f(0.1, 0.7);
 const MAX_HEAPS = 1.5; // the stretched range's top, (1 − 0.1) / (0.7 − 0.1)
-// Cloud fills quickly past its boundary, as real cumulus does: nearly uniform inside, with
-// a crisp edge for the detail to carve.
+// Density past the threshold of cloud, in units of the heaps field: it rises quickly to a
+// translucent rim at BOUNDARY, a crisp silhouette for the detail to carve, then gradually to the
+// core at CORE. Real cumulus thicken inward like this, which gives each heap soft volume, light
+// fading into shadow across it, rather than the flat face of a uniformly dense one.
 const BOUNDARY = 0.06;
+const CORE = 0.25;
+const RIM = 0.5; // share of the core's density the rim reaches
 // How far the heaps field typically changes per km across a heap's edge, in its own units.
 const FIELD_CHANGE = 0.2;
 // Density at the base relative to the body: droplets are still small where condensation begins.
@@ -39,13 +44,18 @@ const TOWER_CELLS = vec2f(0.3, 0.7);
 // rising air first condenses: the heaps' flat bases.
 const BASE = 0.01;
 // How far the turrets (the shape's finest Worley, cells of ≈ 300 m) bulge from the heaps, and how
-// far the finer detail displaces their boundary, in units of the heaps field.
+// far the finer detail displaces their boundary, in units of the heaps field: most at the crowns,
+// which boil, least low down, where fraying would shred the heaps into flecks.
 const TURRETS = 0.5;
-const EROSION = 0.5;
+const EROSION = vec2f(0.24, 0.56); // low on a heap, and at its crown
+// How far past the heaps' own smooth boundary turrets and detail may carry it, low on a heap and
+// at its crown: they lobe and fray coherent heaps, but never raise detached flecks out of clear
+// air, and boil up freely only from the crowns, where the air rises fastest.
+const ATTACHED = vec2f(0.05, 0.2);
 // Detail churns faster than the heaps it erodes.
 const DETAIL_CHURN = 3.0;
 // Extinction at unit density, km⁻¹ (real cumulus: tens per km).
-const EXTINCTION = 75.0;
+const EXTINCTION = 70.0;
 
 // View ray: more steps where the ray grazes the shell and crosses more of it. A heap turns opaque
 // within a hundred metres of its edge, far less than a step, so where the ray enters one matters
@@ -153,28 +163,30 @@ fn heightProfile(h: f32, top: f32) -> f32 {
 // The field below which no air has yet condensed: a level plane that cuts every heap's base flat
 // and smooth, whatever the detail does to its flanks.
 fn condensationField(h: f32) -> f32 {
-  return BOUNDARY * h / BASE;
+  return CORE * h / BASE;
 }
 
 // How far past the threshold of cloud the field lies at a point: negative in clear air, and the
-// cloud whole BOUNDARY past it. The heaps, shaped by height, form a continuous field; turrets
-// bulge from it, and detail displaces it (wispy below, billowy above) before the sharp threshold
-// turns it into cloud, so the detail carves the boundary itself. A sample standing for `footprint`
-// km takes the mean of the features it cannot resolve, and the detail is not read where it could
-// not carry the field across the threshold or out of the boundary: there the air is clear, or the
-// cloud whole, whatever the detail says.
+// cloud's core CORE past it. The heaps, shaped by height, form a continuous field; turrets bulge
+// from it, and detail displaces it (wispy below, billowy above) before the sharp threshold turns
+// it into cloud, so the detail carves the boundary itself, though never far from the heaps'.
+// A sample standing for `footprint` km takes the mean of the features it cannot resolve, and the
+// detail is not read where it could not carry the field across the threshold or into the core:
+// there the air is clear, or the cloud whole, whatever the detail says.
 fn cumulusField(p: vec3f, weather: Weather, footprint: f32) -> f32 {
   let h = heightFraction(p);
   let rise = h / weather.top;
   let profile = heightProfile(h, weather.top);
   let threshold = 1.0 - weather.cover;
+  let crown = smoothstep(0.3, 0.8, rise);
+  let attached = mix(ATTACHED.x, ATTACHED.y, crown);
   let turrets = TURRETS * resolved(TURRET_SPACING, footprint);
-  let erosion = EROSION * resolved(DETAIL_SPACING, footprint);
+  let erosion = mix(EROSION.x, EROSION.y, crown) * resolved(DETAIL_SPACING, footprint);
   let detailReach = 0.5 * erosion; // the most the detail moves the field either way
   // The heaps never exceed their profile, so where even turrets and detail could not carry them
   // across the threshold the noise is not read.
   let base = condensationField(h);
-  if (MAX_HEAPS * profile + 0.5 * turrets + detailReach <= threshold || base <= 0.0) {
+  if (MAX_HEAPS * profile + attached <= threshold || base <= 0.0) {
     return min(MAX_HEAPS * profile - threshold, base);
   }
   let position = cloudSpace(p);
@@ -184,13 +196,14 @@ fn cumulusField(p: vec3f, weather: Weather, footprint: f32) -> f32 {
   // Cauliflower: rounded turrets bulge from the flanks and tops and lobe the base's outline; the
   // condensation level still cuts it flat.
   let body = heaps + turrets * (shape.a - 0.5);
-  if (erosion <= 0.0 || body + detailReach <= threshold || body - detailReach >= threshold + BOUNDARY) {
-    return min(body - threshold, base);
+  let limit = min(heaps + attached - threshold, base);
+  if (erosion <= 0.0 || min(body + detailReach - threshold, limit) <= 0.0 || body - detailReach >= threshold + CORE) {
+    return min(body - threshold, limit);
   }
   let churn = vec3f(0.0, DETAIL_CHURN * u.cloudEvolution, 0.0);
   let detail = dot(sampleNoise((position + churn) / DETAIL_TILE).gba, DETAIL_WEIGHTS);
   let billows = mix(detail, 1.0 - detail, smoothstep(0.1, 0.4, rise));
-  return min(body + erosion * (0.5 - billows) - threshold, base);
+  return min(body + erosion * (0.5 - billows) - threshold, limit);
 }
 
 // Density at the base relative to the body, at a point.
@@ -198,30 +211,40 @@ fn baseDensity(p: vec3f) -> f32 {
   return mix(BASE_DENSITY, 1.0, saturate(heightFraction(p) * 3.0));
 }
 
+// Density in [0, 1] from how far past the threshold the field lies: the rim, then the core, each
+// reached over a ramp widened by `widening`.
+fn fill(field: f32, widening: f32) -> f32 {
+  return RIM * saturate(field / (BOUNDARY + widening)) + (1.0 - RIM) * saturate(field / (CORE + widening));
+}
+
 // Density in [0, 1] at a sample standing for `footprint` km. Across a long sample the field
-// sweeps through the threshold's ramp and beyond, so its mean density rises gently rather than
-// jumping as an edge crosses the sample: the ramp is widened by how far the field typically
+// sweeps through the threshold's ramps and beyond, so its mean density rises gently rather than
+// jumping as an edge crosses the sample: the ramps are widened by how far the field typically
 // changes over the footprint. Where the light march and shadow map step far, heaps then shade
 // smoothly as they drift instead of sparkling and flickering.
 fn cumulusDensity(p: vec3f, weather: Weather, footprint: f32) -> f32 {
-  let ramp = BOUNDARY + FIELD_CHANGE * footprint;
-  return saturate(cumulusField(p, weather, footprint) / ramp) * baseDensity(p);
+  return fill(cumulusField(p, weather, footprint), FIELD_CHANGE * footprint) * baseDensity(p);
 }
 
-// ∫ saturate(f / BOUNDARY) df: the threshold's ramp, integrated.
-fn thresholdIntegral(field: f32) -> f32 {
-  let ramp = saturate(field / BOUNDARY);
-  return BOUNDARY * 0.5 * ramp * ramp + max(field - BOUNDARY, 0.0);
+// ∫ saturate(f / width) df: one ramp, integrated.
+fn rampIntegral(field: f32, width: f32) -> f32 {
+  let ramp = saturate(field / width);
+  return width * 0.5 * ramp * ramp + max(field - width, 0.0);
 }
 
-// The mean of saturate(f / BOUNDARY) along a step over which the field runs linearly from `a` to
-// `b`: the threshold, which a heap crosses in far less than a step, integrated exactly between
-// two samples instead of taken at one.
+// ∫ fill(f, 0) df.
+fn fillIntegral(field: f32) -> f32 {
+  return RIM * rampIntegral(field, BOUNDARY) + (1.0 - RIM) * rampIntegral(field, CORE);
+}
+
+// The mean density along a step over which the field runs linearly from `a` to `b`: the
+// threshold, which a heap crosses in far less than a step, integrated exactly between two samples
+// instead of taken at one.
 fn meanCloud(a: f32, b: f32) -> f32 {
   if (abs(b - a) < 1e-4) {
-    return saturate(0.5 * (a + b) / BOUNDARY);
+    return fill(0.5 * (a + b), 0.0);
   }
-  return (thresholdIntegral(b) - thresholdIntegral(a)) / (b - a);
+  return (fillIntegral(b) - fillIntegral(a)) / (b - a);
 }
 
 // Optical depth from a sample toward the key light, through the bulk of the cloud. Samples are
