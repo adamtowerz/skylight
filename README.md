@@ -68,7 +68,15 @@ height and Ångström exponent, Mie anisotropy, ozone (the violet of the blue ho
 spectral slope — plus cloud cover. Colour comes from amplified physics, never from paint.
 
 **Clouds.** A raymarched cumulus shell at 1.5–3.5 km sits in front of a cirrus sheet at 8 km
-(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). A heap turns opaque within far less than a step of
+(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). The heaps are built as in Schneider's Nubis: a
+weather field sets how much of the sky is cloud and how tall the heaps grow, from fair-weather
+puffs to towering congestus at the hearts of its convection cells (`cloudTowers`, per mood); a
+height gradient turns Perlin–Worley heaps into domes whose own cores push their tops up; the
+condensation level cuts every base flat; Worley turrets bulge from the flanks and tops, and finer
+Worley detail frays the edges, wispy below and billowy above. Each lookup (the view ray's pixel
+cells, the light march's lengthening steps, the shadow map's long ones) resolves only the features
+its sample can, so none alias into sparkle as the heaps drift. The cloud is as dense as real
+cumulus, which keeps edges crisp and lets thick heaps darken their own bases and crevices. A heap turns opaque within far less than a step of
 the view ray, so between two samples the march takes the field to run linearly and integrates the
 cloud's sharp threshold along the step exactly, and lights each step where the light it sends to
 the eye comes from on average (near the front of a thick step): heap edges move smoothly across

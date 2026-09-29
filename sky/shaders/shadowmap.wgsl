@@ -1,6 +1,6 @@
 // Draws the cloud shadow map (cloudshadow.wgsl): each texel marches its line through the cumulus
 // from the key light's side, and keeps where the cloud begins, how dense it is and how much of it
-// there is. The heaps' shapes without their detail, as the clouds' own light march sees them.
+// there is. Only the heaps' bulk, without their turrets or detail, which its long steps would alias.
 //
 // Its texels are lines fixed around the observer, which the heaps drift through, so what each
 // stores must change smoothly as a heap's edge crosses it, or the lane it shades jumps by a
@@ -57,7 +57,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     if (h <= 0.0 || h >= 1.0) {
       continue;
     }
-    let density = cumulusDensity(p, coverage(cloudSpace(p)), false) * (1.0 - smoothstep(reach - SHADOW_FADE, reach, s));
+    let density = cumulusDensity(p, weatherAt(cloudSpace(p)), SHADOW_STEP) * (1.0 - smoothstep(reach - SHADOW_FADE, reach, s));
     if (density <= 0.0) {
       continue;
     }

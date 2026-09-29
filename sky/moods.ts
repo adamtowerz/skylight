@@ -65,6 +65,11 @@ export interface Mood {
   shafts: number
   cloudCoverage: number
   cloudDensity: number
+  /**
+   * How tall the heaps grow where convection is strongest, at the heart of the weather's cells:
+   * 0 keeps them fair-weather cumulus, 1 lets them tower into congestus that fill the layer.
+   */
+  cloudTowers: number
   cirrusCoverage: number
 }
 
@@ -80,6 +85,7 @@ const moods = {
     shafts: 300,
     cloudCoverage: 0.3,
     cloudDensity: 0.7,
+    cloudTowers: 0.4,
     cirrusCoverage: 0.4,
   },
   violetDusk: {
@@ -93,6 +99,7 @@ const moods = {
     shafts: 500,
     cloudCoverage: 0.2,
     cloudDensity: 0.6,
+    cloudTowers: 0.15,
     cirrusCoverage: 0.45,
   },
   emberSky: {
@@ -106,6 +113,7 @@ const moods = {
     shafts: 300,
     cloudCoverage: 0.45,
     cloudDensity: 1,
+    cloudTowers: 0.9,
     cirrusCoverage: 0.3,
   },
   clear: {
@@ -119,6 +127,7 @@ const moods = {
     shafts: 500,
     cloudCoverage: 0.15,
     cloudDensity: 0.6,
+    cloudTowers: 0,
     cirrusCoverage: 0.2,
   },
   softOvercast: {
@@ -132,6 +141,7 @@ const moods = {
     shafts: 210,
     cloudCoverage: 0.7,
     cloudDensity: 0.55,
+    cloudTowers: 0.6,
     cirrusCoverage: 0.1,
   },
 } as const satisfies Record<string, Mood>
@@ -187,6 +197,7 @@ export function moodUniforms(mood: Mood): Partial<UniformValues> {
     shaftStrength: mood.shafts,
     cloudCoverage: mood.cloudCoverage,
     cloudDensity: mood.cloudDensity,
+    cloudTowers: mood.cloudTowers,
     cirrusCoverage: mood.cirrusCoverage,
   }
 }

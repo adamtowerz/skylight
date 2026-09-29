@@ -57,6 +57,7 @@ const schema = {
   // Clouds (km)
   cloudCoverage: 'f32',
   cloudDensity: 'f32',
+  cloudTowers: 'f32', // how tall the heaps grow at the heart of the weather's convection cells
   cloudBottom: 'f32',
   cloudTop: 'f32',
   cloudWind: 'vec2f', // accumulated offset
