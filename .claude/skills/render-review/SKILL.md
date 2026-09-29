@@ -103,6 +103,13 @@ report.
 - **Motion**: `--params 'speed=20' --motion --wait 2000,6000,10000` (or `speed=1`): clouds must
   drift without smearing, ghosting or shimmer; exposure must not pump. Scrubbing (scroll, arrow keys)
   resets the TAA history by design; the clouds then show the 2 × 2 march filled bilinearly.
+- **Temporal stability**: stills (`speed=0`, reduced motion) hide flicker. Burst the real experience
+  on both builds and compare the flicker maps:
+  `node scripts/shots.mjs --base … --hours 13,18.3,23 --motion --params 'speed=1' --burst 16 --wait 7000 --out .context/shots/burst-after`
+  then `sheet.mjs --before … --after … --match flicker --diff 1`. Printed means of ≈ 0.1–0.2
+  (8-bit levels, grain excluded) are a steady sky; structure in the map (lanes, contour lines
+  across heaps, combing) that the baseline lacks is a regression. Golden hour (17.9, 18.3) is
+  where the light shafts show.
 - **Frame time**: `node scripts/frametime.mjs --url 'http://localhost:3417/?hour=18.8&speed=0&mood=1'`
   prints median/p90 GPU ms per pass (timestamp queries injected from outside the engine). Budget
   ≲ 8 ms at 1440×900 on the M1 Pro (about 4.5 ms today: cloud layer ≈ 1.5, scene 1.0, post 0.7,
@@ -120,8 +127,8 @@ report.
   whole black frame (exposure buffer poisoned). Check `max()`/`sqrt`/`pow` of negatives and divisions.
 - Banding in gradients (twilight sky, near the sun, dark night sky): check at 1:1; the dither
   should hide it. Don't trust banding seen only in a large downsampled sheet.
-- Shimmer / popping: cloud edges or cirrus fibres flicker between frames; compare two waits of a
-  `--motion` run, or crop the same area from `--wait 6000,6500`.
+- Shimmer / popping: cloud edges or cirrus fibres flicker between frames, or light shafts jump;
+  measure with `--burst` (above), which catches what two screenshots seconds apart cannot.
 - Exposure pumping: brightness breathing as clouds drift; watch a `speed=20` sequence.
 - Ghosting / smearing behind moving clouds; stars or the sun smeared (they must never be
   accumulated).

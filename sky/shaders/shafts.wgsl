@@ -34,7 +34,7 @@ fn beams(dir: vec3f, jitter: f32) -> vec4f {
   if (low <= 0.0 || all(key.illuminance <= vec3f(0.0))) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
-  let frame = cloudShadowFrame(key.direction, vec2f(textureDimensions(cloudShadowMap)));
+  let frame = cloudShadowFrame(key.direction);
   let mie = miePhase(min(dot(dir, key.direction), AUREOLE));
   let r = observerRadius();
   let eye = vec3f(0.0, r, 0.0);

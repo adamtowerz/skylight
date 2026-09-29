@@ -6,7 +6,7 @@
  *
  *   node scripts/shots.mjs --base http://localhost:3417 --hours 7,13,18.3,18.8,19.1,23 \
  *     [--moods 0,1,2] [--dpr 1,2] [--theme dark,light] [--size 1440x900] [--wait 6000] \
- *     [--params 'speed=1'] [--motion] [--headed] --out .context/shots/<tag>
+ *     [--params 'speed=1'] [--motion] [--burst 16] [--headed] --out .context/shots/<tag>
  *
  * Names are `h<hour>[-m<mood>][-dpr<ratio>][-<theme>][-<wait>ms].png`: the hour always, the
  * others only when that option was given (the wait only when there are several). Every URL has
@@ -14,15 +14,21 @@
  * also ask for reduced motion, which stills the camera's breathing, so the same shot from two
  * builds lines up to the pixel (only the grain still differs); `--motion` keeps the breath.
  *
+ * `--burst N` also copies N consecutive frames after the last wait and writes `<name>-flicker.png`,
+ * each pixel's frame-to-frame flicker (grain excluded, ×40), printing its mean and 99th
+ * percentile (`flicker.mjs`). Stills hide temporal artefacts: for the real experience use it with
+ * `--motion --params speed=1`, and compare the flicker maps of two builds with `sheet.mjs`.
+ *
  * Shots run one page at a time. Pages in parallel share the one GPU: a starved page averages
  * fewer frames into its clouds, adapts its exposure more slowly, and with three at once a page
  * can take seconds to show its first frame, so it is caught mid-reveal.
  */
 
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { launchChrome, list, openPage, requireWebGpu } from './browser.mjs'
+import { installFrameCapture, measureFlicker } from './flicker.mjs'
 
 const { values } = parseArgs({
   options: {
@@ -35,6 +41,7 @@ const { values } = parseArgs({
     wait: { type: 'string', default: '6000' },
     params: { type: 'string', default: '' },
     motion: { type: 'boolean', default: false },
+    burst: { type: 'string' },
     headed: { type: 'boolean', default: false },
     out: { type: 'string' },
   },
@@ -61,6 +68,7 @@ const browser = await launchChrome({ headed: values.headed })
 async function take({ name, url, dpr, theme }) {
   const page = await openPage(browser, { size: values.size, dpr, theme, still: !values.motion, tag: name })
   try {
+    if (values.burst) await installFrameCapture(page)
     await page.goto(url, { waitUntil: 'load' })
     await requireWebGpu(page)
     const start = Date.now()
@@ -69,6 +77,11 @@ async function take({ name, url, dpr, theme }) {
       const path = join(values.out, `${name}${waits.length > 1 ? `-${wait}ms` : ''}.png`)
       await page.screenshot({ path })
       console.log(`Saved ${path}  ← ${url}`)
+    }
+    if (values.burst) {
+      const { mean, p99, pairs, png } = await measureFlicker(page, { count: Number(values.burst) })
+      writeFileSync(join(values.out, `${name}-flicker.png`), Buffer.from(png.split(',')[1], 'base64'))
+      console.log(`Flicker ${name}: mean ${mean.toFixed(2)}, p99 ${p99.toFixed(1)} (${pairs} frame pairs)`)
     }
   } finally {
     await page.close()

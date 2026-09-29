@@ -68,31 +68,33 @@ height and Ångström exponent, Mie anisotropy, ozone (the violet of the blue ho
 spectral slope — plus cloud cover. Colour comes from amplified physics, never from paint.
 
 **Clouds.** A raymarched cumulus shell at 1.5–3.5 km sits in front of a cirrus sheet at 8 km
-(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). Sunlight reaches every sample through the
-transmittance LUT, so after the sun sets at the ground the clouds keep catching it, gold, then rose,
-then the cirrus alone glows pink. Direct light uses a short light march, a dual-lobe phase function
-(the silver lining) and multiple-scattering octaves after Wrenninge et al. 2013, which reach deeper
-under a grazing sun so sunset heaps glow through. Ambient light is the sky-view LUT, with shaded
-sides seeing only the half of the sky turned from the sun (blue shadows at noon, violet at dusk),
-and grass bounce from below, both dimmed with depth into the heap. At night the moon lights them,
-and they stand dark against the airglow with silver rims.
+(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). Where the view ray first finds a heap it steps back
+and finds its edge again in steps four times finer, so the heaps' sharp edges never fall into
+contour lines. Sunlight reaches every sample through the transmittance LUT, so after the sun sets at
+the ground the clouds keep catching it, gold, then rose, then the cirrus alone glows pink. Direct
+light uses a short light march, a dual-lobe phase function (the silver lining) and
+multiple-scattering octaves after Wrenninge et al. 2013, which reach deeper under a grazing sun so
+sunset heaps glow through. Ambient light is the sky-view LUT, with shaded sides seeing only the half
+of the sky turned from the sun (blue shadows at noon, violet at dusk), and grass bounce from below,
+both dimmed with depth into the heap. At night the moon lights them, and they stand dark against the
+airglow with silver rims.
 
-**Shafts.** Low sunlight pours through the gaps between the heaps in beams that fan out from
-the sun, and converge again opposite it at sunrise. A Beer shadow map (Hillaire 2016) looks along
-the key light (the sun, or the moon at night) over the cloud layer around the observer: per texel,
-where the cumulus begins toward the light, its mean extinction and its optical depth. It is laid
-out in the drifting cloud field and snapped to its texels, so it is redrawn every frame at little
-cost without the shadows ever crawling. Its height follows the light, so a grazing sun gets all
-its texels, and it reaches toward the light only as far as the heaps whose shadows fall to the
-ground nearby, so the heaps in and near view cast the lanes. Each view ray is marched up to the
-cloud tops against it for two things: the aerosols' forward (Mie) scattering of sunlight as if all
-the air were lit, reddened by the light's path, and the share of it that is. The sky-view LUT
-already holds that light on average, never broken by cloud, so what the shafts add is contrast:
-the beam times how far the ray's lit share strays from its mean over wide blocks of the view (the
-`shaft mean` pass). Lit lanes brighten, shaded ones darken a little (keeping their hue, never by
-more than 30 %), and the sky around them keeps its glow. The contrast is amplified per mood
-(`shafts` in `moods.ts`, scaled against each mood's haze), meets the sky with a film-like
-shoulder, and fades out as the sun climbs past 30°.
+**Shafts.** Low sunlight pours through the gaps between the heaps in beams that fan out from the
+sun, and converge again opposite it at sunrise. A Beer shadow map (Hillaire 2016) looks along the
+key light (the sun, or the moon at night) over the cloud layer around the observer: per texel, where
+the cumulus begins toward the light, its mean extinction and its optical depth. It glides with the
+drifting cloud field and turns with the light about the region around the observer, so it is redrawn
+every frame at little cost and its shadows move only as the clouds and the sun do, never a texel at
+a time. Its height follows the light, so a grazing sun gets all its texels, and it reaches toward
+the light only as far as the heaps whose shadows fall to the ground nearby, so the heaps in and near
+view cast the lanes. Each view ray is marched up to the cloud tops against it for two things: the
+aerosols' forward (Mie) scattering of sunlight as if all the air were lit, reddened by the light's
+path, and the share of it that is. The sky-view LUT already holds that light on average, never
+broken by cloud, so what the shafts add is contrast: the beam times how far the ray's lit share
+strays from its mean over wide blocks of the view (the `shaft mean` pass). Lit lanes brighten,
+shaded ones darken a little (keeping their hue, never by more than 30 %), and the sky around them
+keeps its glow. The contrast is amplified per mood (`shafts` in `moods.ts`, scaled against each
+mood's haze), meets the sky with a film-like shoulder, and fades out as the sun climbs past 30°.
 
 **Time.** As in Horizon Zero Dawn, the clouds are marched at only one pixel of every 2 × 2 cell
 each frame, taking turns in Bayer order (`interleave.ts`), and every pixel keeps an average of

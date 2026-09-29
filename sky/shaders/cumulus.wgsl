@@ -28,9 +28,17 @@ const DETAIL_CHURN = 3.0;
 // Extinction at unit density, km⁻¹ (real cumulus: tens per km).
 const EXTINCTION = 36.0;
 
-// View ray: more steps where the ray grazes the shell and crosses more of it.
+// View ray: more steps where the ray grazes the shell and crosses more of it. A heap turns opaque
+// within a hundred metres of its edge, far less than a step, so where the ray enters one matters
+// most, and marched at a fixed stride it falls on steps at nearly the same heights across
+// neighbouring pixels: contour lines across the heaps, which neither the jitter nor the temporal
+// average quite hides. So where a step first finds cloud, the march steps back and looks for the
+// edge again in REFINE times finer steps, sampling only density, and strides on from there.
 const MIN_STEPS = 40.0;
 const MAX_STEPS = 80.0;
+const REFINE = 4u;
+// Each heap entered costs REFINE samples more, none of them lit.
+const MAX_SAMPLES = 2u * u32(MAX_STEPS);
 const MAX_MARCH = 30.0; // km
 // Stop once so little of the background shows through.
 const OPAQUE = 0.01;
@@ -182,8 +190,8 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
   let r = observerRadius();
   let enter = raySphere(r, dir.y, cloudBase()).y;
   let leave = min(raySphere(r, dir.y, u.bottomRadius + u.cloudTop).y, enter + MAX_MARCH);
-  let steps = mix(MAX_STEPS, MIN_STEPS, saturate(dir.y));
-  let stepLength = (leave - enter) / steps;
+  let coarse = (leave - enter) / mix(MAX_STEPS, MIN_STEPS, saturate(dir.y));
+  let fineLength = coarse / f32(REFINE);
   let eye = vec3f(0.0, r, 0.0);
   let cosTheta = dot(dir, lighting.keyDirection);
   let octaveReach = mix(GRAZING_OCTAVE_REACH, OCTAVE_REACH, smoothstep(GRAZING.x, GRAZING.y, lighting.keyDirection.y));
@@ -191,19 +199,33 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
   var radiance = vec3f(0.0);
   var seen = 1.0; // transmittance from the eye to the current sample
   var depth = 0.0; // opacity-weighted distance, for aerial perspective
-  for (var i = 0.0; i < steps; i += 1.0) {
-    let t = enter + (i + jitter) * stepLength;
+  var t = enter + jitter * coarse;
+  var inside = false; // the last sample was in cloud
+  var fineSteps = 0u; // fine steps left toward an edge just found
+  for (var i = 0u; i < MAX_SAMPLES && t < leave; i++) {
     let p = eye + dir * t;
     let cover = coverage(cloudSpace(p));
     let density = cumulusDensity(p, cover, true);
-    if (density <= 0.0) {
+    let entering = !inside && density > 0.0;
+    inside = density > 0.0;
+    if (entering && fineSteps == 0u) {
+      // The cloud begins somewhere since the last, clear, coarse step: look for it again finely.
+      t += fineLength - coarse;
+      fineSteps = REFINE;
+      inside = false;
       continue;
     }
+    if (!inside) {
+      t += select(coarse, fineLength, fineSteps > 1u);
+      fineSteps = select(0u, fineSteps - 1u, fineSteps > 0u);
+      continue;
+    }
+    fineSteps = 0u;
     let extinction = density * EXTINCTION * u.cloudDensity;
     let keyLight = lighting.keyIlluminance * transmittanceAt(p, lighting.keyDirection);
     // Each view step strides the light march's jitter by the golden ratio, so its error averages
     // out along the ray instead of repeating the pixel's pattern.
-    let lightDepth = opticalDepthToLight(p, lighting.keyDirection, cover, fract(jitter + i * GOLDEN_RATIO));
+    let lightDepth = opticalDepthToLight(p, lighting.keyDirection, cover, fract(jitter + f32(i) * GOLDEN_RATIO));
     let direct = keyLight * scattering(lightDepth, cosTheta, octaveReach);
     // Ambient: skylight from above and grass light from below, blended by height and each dimmed
     // by the cloud it diffuses through, plus skylight from the sides.
@@ -213,13 +235,14 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
     let ambient = mix(mix(lighting.ground * reach.y, sky * reach.x, sqrt(h)), sky, SIDE_SKYLIGHT);
     // Energy-conserving integration over the step (Hillaire 2016); droplets barely absorb, so
     // scattering ≈ extinction and the in-scattered light is simply (direct + ambient) × opacity.
-    let opacity = 1.0 - exp(-extinction * stepLength);
+    let opacity = 1.0 - exp(-extinction * coarse);
     radiance += seen * opacity * (direct + ambient);
     depth += seen * opacity * t;
     seen *= 1.0 - opacity;
     if (seen < OPAQUE) {
       break;
     }
+    t += coarse;
   }
   let layer = vec4f(radiance, seen);
   return throughAir(layer, dir, depth / max(1.0 - seen, 1e-4));

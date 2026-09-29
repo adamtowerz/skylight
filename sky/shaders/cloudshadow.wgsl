@@ -12,9 +12,12 @@
 // Front and extinction are stored premultiplied by the optical depth, so that where a lookup
 // blends cloudy texels with clear ones, it blends only the cloudy ones' fronts.
 //
-// The map lives in cloud space. Its texels are lines fixed in the drifting cloud field, and its
-// window over the field is snapped to whole texels as the field drifts by, so shadows travel with
-// the clouds and never crawl. Its height follows the light: seen along a grazing sun the whole
+// The map lives in cloud space, over the region around the observer, and turns with the light
+// about the region's middle. Its window glides smoothly over the drifting field and the texels
+// are filtered, so shadows travel with the clouds and the slow sun and never jump: snapping the
+// window to whole texels, laid out from the planet's centre, made every turn of the light a
+// jolt of up to half a texel, which a grazing sun stretches into a whole lane. Its height follows
+// the light: seen along a grazing sun the whole
 // region is a thin band, and the map spends every texel on it.
 //
 // Read at binding 8, through the atmosphere's bilinear, clamped sampler.
@@ -26,14 +29,14 @@ const SHADOW_RADIUS = 24.0;
 // Share of the map's width, at either side, over which its shadows fade out.
 const SHADOW_EDGE = 0.1;
 
-// Where the map lies. Positions on it are cloud-space (x, y, s): across the light horizontally,
-// across it in its vertical plane, and along it toward the light.
+// Where the map lies. Positions on it are cloud-space (x, y, s) about the region's middle: across
+// the light horizontally, across it in its vertical plane, and along it toward the light.
 struct ShadowFrame {
   x: vec3f,
   y: vec3f,
   toward: vec3f,
   window: vec2f, // half-size across x and y, km
-  centre: vec3f, // (x, y) snapped to texels
+  middle: vec3f, // cloud space
 }
 
 // The wind's offset, planet-centred km: world = cloud space + drift.
@@ -41,7 +44,7 @@ fn drift() -> vec3f {
   return vec3f(u.cloudWind.x, 0.0, u.cloudWind.y);
 }
 
-fn cloudShadowFrame(light: vec3f, texels: vec2f) -> ShadowFrame {
+fn cloudShadowFrame(light: vec3f) -> ShadowFrame {
   let horizontal = length(light.xz);
   let x = select(vec3f(1.0, 0.0, 0.0), vec3f(-light.z, 0.0, light.x) / horizontal, horizontal > 1e-4);
   let y = cross(x, light);
@@ -50,21 +53,19 @@ fn cloudShadowFrame(light: vec3f, texels: vec2f) -> ShadowFrame {
   let halfHeight = 0.5 * u.cloudTop;
   let window = vec2f(SHADOW_RADIUS, SHADOW_RADIUS * abs(light.y) + halfHeight * horizontal);
   let middle = vec3f(0.0, u.bottomRadius + halfHeight, 0.0) - drift();
-  let texel = 2.0 * window / texels;
-  let snapped = round(vec2f(dot(middle, x), dot(middle, y)) / texel) * texel;
-  return ShadowFrame(x, y, light, window, vec3f(snapped, dot(middle, light)));
+  return ShadowFrame(x, y, light, window, middle);
 }
 
 // A cloud-space position's (x, y) as a uv over the map.
 fn shadowUv(frame: ShadowFrame, position: vec3f) -> vec2f {
-  let offset = vec2f(dot(position, frame.x), dot(position, frame.y)) - frame.centre.xy;
-  return 0.5 + 0.5 * offset / frame.window;
+  let offset = position - frame.middle;
+  return 0.5 + 0.5 * vec2f(dot(offset, frame.x), dot(offset, frame.y)) / frame.window;
 }
 
 // The point of a texel's line at s = 0 (planet-centred km, where the wind has carried it).
 fn shadowLine(frame: ShadowFrame, uv: vec2f) -> vec3f {
-  let offset = (2.0 * uv - 1.0) * frame.window + frame.centre.xy;
-  return offset.x * frame.x + offset.y * frame.y + drift();
+  let offset = (2.0 * uv - 1.0) * frame.window;
+  return frame.middle + offset.x * frame.x + offset.y * frame.y + drift();
 }
 
 // Optical depth of the cumulus between `p` (planet-centred km) and the key light.
@@ -80,6 +81,6 @@ fn cloudShadowDepth(frame: ShadowFrame, p: vec3f) -> f32 {
   if (depth <= 0.0) {
     return 0.0;
   }
-  let behind = texel.x / depth - (dot(position, frame.toward) - frame.centre.z);
+  let behind = texel.x / depth - dot(position - frame.middle, frame.toward);
   return min(texel.y / depth * max(behind, 0.0), depth) * fade;
 }
