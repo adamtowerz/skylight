@@ -71,9 +71,10 @@ spectral slope — plus cloud cover. Colour comes from amplified physics, never 
 (`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). The heaps are built as in Schneider's Nubis: a
 weather field sets how much of the sky is cloud and how tall the heaps grow, from fair-weather
 puffs to towering congestus at the hearts of its convection cells (`cloudTowers`, per mood); a
-height gradient turns Perlin–Worley heaps into domes whose own cores push their tops up; the
-condensation level cuts every base flat; Worley turrets bulge from the flanks and tops, and finer
-Worley detail frays the edges, wispy below and billowy above, both held close to the heaps' own
+height gradient turns Perlin–Worley heaps into domes whose own cores push their tops up, and the
+weather shears them about so every outline is its own; the condensation level cuts every base
+flat; broad Worley turrets swell the flanks and tops into one merged body, and finer Worley
+detail frays the edges, wispy below and billowy above, both held close to the heaps' own
 bodies so that they lobe coherent heaps rather than scatter flecks. Each lookup (the view ray's pixel
 cells, the light march's lengthening steps, the shadow map's long ones) resolves only the features
 its sample can, so none alias into sparkle as the heaps drift. Density rises from a crisp,

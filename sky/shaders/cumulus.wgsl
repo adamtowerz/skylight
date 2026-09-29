@@ -3,16 +3,17 @@
 // Perlin–Worley heaps, masked by a low-frequency weather field that sets both coverage and how
 // tall the heaps grow (fair-weather puffs, and towering congestus at the hearts of its convection
 // cells as the mood allows), shaped by a height gradient into domes that each heap's own core
-// pushes up. The condensation level cuts every base flat; Worley turrets bulge from the flanks
-// and tops (the cauliflower), and finer Worley detail erodes the edges, wispy below and billowy
-// above, both kept close to the heaps' own bodies so they never scatter into flecks. Every lookup
-// resolves only the features its sample can, so nothing aliases into sparkle as the heaps drift.
-// Density rises from a crisp, translucent rim into a core as dense as real cumulus, so heaps have
-// soft volume yet shade their own bases and crevices. Each step is lit by a short march toward the
-// key light, with multiple scattering after Wrenninge et al. 2013 that reaches deeper under a
-// grazing sun (sunset heaps glow through), and by skylight and grass light that fade with depth
-// into the heap: shaded sides turn sky-blue, and thick cores go dark enough to stand out against
-// the night.
+// pushes up, and sheared about by the weather so that each heap's outline is its own. The
+// condensation level cuts every base flat; broad Worley turrets swell the flanks and tops, merging
+// into one body rather than a pile of lobes, and finer Worley detail erodes the edges, wispy below
+// and billowy above, both kept close to the heaps' own bodies so they never scatter into flecks.
+// Every lookup resolves only the features its sample can, so nothing aliases into sparkle as the
+// heaps drift. Density rises from a soft, translucent rim into a core as dense as real cumulus, so
+// heaps have soft volume yet shade their own bases and crevices. Each step is lit by a short march
+// toward the key light, with multiple scattering after Wrenninge et al. 2013 that reaches deeper
+// under a grazing sun (sunset heaps glow through), and by skylight and grass light that fade with
+// depth into the heap: shaded sides turn sky-blue, and thick cores go dark enough to stand out
+// against the night.
 
 // Horizontal extent of one tile of the noise volume, km: the heaps, their detail, the weather.
 const SHAPE_TILE = 5.0;
@@ -27,9 +28,9 @@ const MAX_HEAPS = 1.5; // the stretched range's top, (1 − 0.1) / (0.7 − 0.1)
 // translucent rim at BOUNDARY, a crisp silhouette for the detail to carve, then gradually to the
 // core at CORE. Real cumulus thicken inward like this, which gives each heap soft volume, light
 // fading into shadow across it, rather than the flat face of a uniformly dense one.
-const BOUNDARY = 0.06;
-const CORE = 0.25;
-const RIM = 0.5; // share of the core's density the rim reaches
+const BOUNDARY = 0.08;
+const CORE = 0.35;
+const RIM = 0.4; // share of the core's density the rim reaches
 // How far the heaps field typically changes per km across a heap's edge, in its own units.
 const FIELD_CHANGE = 0.2;
 // Density at the base relative to the body: droplets are still small where condensation begins.
@@ -40,14 +41,16 @@ const WEATHER_CONTRAST = 1.2;
 const FAIR_TOPS = vec2f(0.4, 0.7);
 // Where in the weather's convection cells (its inverted Worley, 1 at their hearts) heaps tower.
 const TOWER_CELLS = vec2f(0.3, 0.7);
+// How far the weather shears the heaps' shapes about, km.
+const WARP = 0.7;
 // Height fraction over which air turns to whole cloud above the lifting condensation level, where
 // rising air first condenses: the heaps' flat bases.
 const BASE = 0.01;
-// How far the turrets (the shape's finest Worley, cells of ≈ 300 m) bulge from the heaps, and how
+// How far the turrets (the shape's middle Worley, cells of ≈ 600 m) swell the heaps, and how
 // far the finer detail displaces their boundary, in units of the heaps field: most at the crowns,
 // which boil, least low down, where fraying would shred the heaps into flecks.
-const TURRETS = 0.5;
-const EROSION = vec2f(0.24, 0.56); // low on a heap, and at its crown
+const TURRETS = 0.35;
+const EROSION = vec2f(0.3, 0.56); // low on a heap, and at its crown
 // How far past the heaps' own smooth boundary turrets and detail may carry it, low on a heap and
 // at its crown: they lobe and fray coherent heaps, but never raise detached flecks out of clear
 // air, and boil up freely only from the crowns, where the air rises fastest.
@@ -55,7 +58,7 @@ const ATTACHED = vec2f(0.05, 0.2);
 // Detail churns faster than the heaps it erodes.
 const DETAIL_CHURN = 3.0;
 // Extinction at unit density, km⁻¹ (real cumulus: tens per km).
-const EXTINCTION = 70.0;
+const EXTINCTION = 60.0;
 
 // View ray: more steps where the ray grazes the shell and crosses more of it. A heap turns opaque
 // within a hundred metres of its edge, far less than a step, so where the ray enters one matters
@@ -107,9 +110,9 @@ const SHADE_DEPTH = 8.0;
 
 const DETAIL_WEIGHTS = vec3f(0.625, 0.25, 0.125);
 
-// Typical spacing of the turrets and of the detail, km: their Worley fBm starts at 16 and at 4
+// Typical spacing of the turrets and of the detail, km: their Worley fBm starts at 8 and at 4
 // cells across a tile, with two finer octaves above each.
-const TURRET_SPACING = SHAPE_TILE / 32.0;
+const TURRET_SPACING = SHAPE_TILE / 16.0;
 const DETAIL_SPACING = DETAIL_TILE / 8.0;
 
 // How much of features `spacing` apart a sample standing for `footprint` km resolves: all where
@@ -137,20 +140,25 @@ fn cloudSpace(p: vec3f) -> vec3f {
 }
 
 // The weather over a point of the layer, in the manner of Schneider's weather map: how much of the
-// sky is cloud there, and the height fraction its heaps' tops reach.
+// sky is cloud there, the height fraction its heaps' tops reach, and how far the wind shear has
+// carried the heaps' shapes (km, horizontal).
 struct Weather {
   cover: f32,
   top: f32,
+  warp: vec2f,
 }
 
 // Local coverage is the mood's mean, broken into fields and gaps. Heaps climb with it, from
 // fair-weather puffs where it is thin to taller heaps where it is thick, and at the hearts of the
 // weather's convection cells, where the air rises fastest, they tower as far as the mood allows.
+// The weather's finer Worley shears the heaps' shapes by different amounts from place to place,
+// stretching some into long rafts and bunching others, so each heap's outline is its own.
 fn weatherAt(position: vec3f) -> Weather {
   let weather = sampleNoise(vec3f(position.xz, 0.5 * u.cloudEvolution) / WEATHER_TILE);
   let cover = saturate(u.cloudCoverage + (weather.r - 0.5) * WEATHER_CONTRAST);
   let towering = u.cloudTowers * smoothstep(TOWER_CELLS.x, TOWER_CELLS.y, weather.g);
-  return Weather(cover, mix(mix(FAIR_TOPS.x, FAIR_TOPS.y, cover), 1.0, towering));
+  let warp = WARP * (weather.ba - 0.5);
+  return Weather(cover, mix(mix(FAIR_TOPS.x, FAIR_TOPS.y, cover), 1.0, towering), warp);
 }
 
 // A dome that the heaps' cores push up into (Schneider 2017's cumulus height gradient): the
@@ -189,13 +197,13 @@ fn cumulusField(p: vec3f, weather: Weather, footprint: f32) -> f32 {
   if (MAX_HEAPS * profile + attached <= threshold || base <= 0.0) {
     return min(MAX_HEAPS * profile - threshold, base);
   }
-  let position = cloudSpace(p);
+  let position = cloudSpace(p) + vec3f(weather.warp.x, 0.0, weather.warp.y);
   let shape = sampleNoise(position / SHAPE_TILE);
   let eroded = remap(shape.r, 0.5 * dot(shape.gba, DETAIL_WEIGHTS), 1.0, 0.0, 1.0);
   let heaps = max(remap(eroded, HEAPS_RANGE.x, HEAPS_RANGE.y, 0.0, 1.0), 0.0) * profile;
-  // Cauliflower: rounded turrets bulge from the flanks and tops and lobe the base's outline; the
-  // condensation level still cuts it flat.
-  let body = heaps + turrets * (shape.a - 0.5);
+  // Broad turrets swell the flanks and tops and lobe the base's outline; the condensation level
+  // still cuts it flat.
+  let body = heaps + turrets * (shape.b - 0.5);
   let limit = min(heaps + attached - threshold, base);
   if (erosion <= 0.0 || min(body + detailReach - threshold, limit) <= 0.0 || body - detailReach >= threshold + CORE) {
     return min(body - threshold, limit);
