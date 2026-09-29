@@ -22,6 +22,10 @@ export interface Targets {
   history: GPUTextureView
   /** …and as of this one: written now, read as `history` next frame. */
   accumulated: GPUTextureView
+  /** Beams of sunlight and their lit share: one texel per cell, like the cloud layer. */
+  shafts: GPUTextureView
+  /** The shafts' average lit share, one texel per block of `shaftBlock` pixels. */
+  shaftMean: GPUTextureView
   /** HDR scene colour at render scale. */
   scene: GPUTextureView
   /** The swap chain texture for this frame. */

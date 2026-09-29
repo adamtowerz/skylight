@@ -14,10 +14,13 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   (`celestial.ts`) and camera (`camera.ts`), picks the mood (`moods.ts`), fills the uniforms and
   calls `renderer.render`.
 - `sky/renderer.ts` owns every shared GPU resource (uniform and exposure buffers, LUTs, noise
-  volume, cloud layer, history pair, scene target) and encodes the frame graph in order:
-  noise (once) → transmittance → multiscattering → sky view → exposure → cloud layer (one pixel
-  per 2 × 2 cell, `interleave.ts`) → scene (sky + clouds rebuilt and averaged over frames) → post
-  (swap chain).
+  volume, cloud shadow map, shaft and cloud layers, history pair, scene target) and encodes the
+  frame graph in order:
+  noise (once) → transmittance → multiscattering → sky view → exposure → cloud shadow (Beer
+  shadow map of the cumulus along the key light, `keylight.wgsl`) → light shafts (beams of
+  sunlight through the gaps, one pixel per 2 × 2 cell) → shaft mean (their average lit share) →
+  cloud layer (one pixel per 2 × 2 cell, `interleave.ts`) → scene (sky plus lane contrast, clouds
+  rebuilt and averaged over frames) → post (swap chain).
 - `sky/passes/*.ts` one per pass: pipeline + bind groups only. `sky/shaders/*.wgsl` the shaders.
 - `sky/uniforms.ts` the one `Uniforms` schema; `struct.ts` generates both the WGSL struct and the
   typed TS writer from it, so offsets can't disagree. Add a uniform there and nowhere else.

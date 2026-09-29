@@ -11,12 +11,6 @@
 @group(0) @binding(5) var cloudNoise: texture_3d<f32>;
 @group(0) @binding(6) var noiseSampler: sampler;
 
-// sin(−3.5°): below this the sun no longer reaches even the cirrus (an 8 km horizon dips ≈ 2.9°,
-// plus the soft band), and the moon takes over as the key light.
-const SUN_REACH = -0.061;
-// sin(−7°): by here moonlight is fully in; it fades in across twilight so the switch never shows.
-const MOONLIGHT = -0.122;
-
 // Fraction of the ground below a cloud base that lies outside that cloud's own shadow.
 const OWN_SHADOW = 0.5;
 
@@ -71,16 +65,16 @@ fn groundAmbient(sky: vec3f) -> vec3f {
 }
 
 fn cloudLighting() -> CloudLighting {
+  let key = keyLight();
   let sunSky = skylight(u.sunDirection);
   if (u.sunDirection.y > SUN_REACH) {
-    return CloudLighting(u.sunDirection, u.sunIlluminance, sunSky[0], sunSky[1], groundAmbient(sunSky[0]));
+    return CloudLighting(key.direction, key.illuminance, sunSky[0], sunSky[1], groundAmbient(sunSky[0]));
   }
   // The shaded side turns from the sun to the moon as moonlight takes over, never all at once.
-  let moonlight = smoothstep(SUN_REACH, MOONLIGHT, u.sunDirection.y);
   let moonSky = skylight(u.moonDirection);
-  let sky = mix(sunSky[0], moonSky[0], moonlight);
-  let shadedSky = mix(sunSky[1], moonSky[1], moonlight);
-  return CloudLighting(u.moonDirection, u.moonIlluminance * moonlight, sky, shadedSky, groundAmbient(sky));
+  let sky = mix(sunSky[0], moonSky[0], moonlight());
+  let shadedSky = mix(sunSky[1], moonSky[1], moonlight());
+  return CloudLighting(key.direction, key.illuminance, sky, shadedSky, groundAmbient(sky));
 }
 
 // The air between the eye and a cloud layer `distance` km away dims it and veils it with the sky

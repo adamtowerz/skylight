@@ -4,6 +4,8 @@
  *   noise (compute, once at init)                           cloud noise volume
  *   uniforms → transmittance → multiscattering → sky view   (atmosphere LUTs, compute)
  *            → exposure (compute)
+ *            → cloud shadow (compute, the cumulus seen from the key light)
+ *            → light shafts (one pixel per cell) → shaft mean (their average lit share)
  *            → cloud layer (one pixel per cell) → scene (HDR + cloud history, render scale)
  *                                               → post (swap chain) → edges (readback, optional)
  *
@@ -26,6 +28,9 @@ import { createNoisePass, noiseFormat, noiseSize } from './passes/noise'
 import type { Pass, Targets } from './passes/pass'
 import { createPostPass } from './passes/post'
 import { createScenePass, sceneFormat } from './passes/scene'
+import { createShaftMeanPass, shaftBlock, shaftMeanFormat } from './passes/shaftmean'
+import { createShaftPass, shaftFormat } from './passes/shafts'
+import { createShadowMapPass, shadowMapFormat, shadowMapSize } from './passes/shadowmap'
 import { createSkyViewPass, skyViewSize } from './passes/skyview'
 import { createTransmittancePass, transmittanceSize } from './passes/transmittance'
 import { Uniforms } from './uniforms'
@@ -72,6 +77,13 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
   })
   const cloudNoise = noiseVolume.createView()
+  const shadowMap = device.createTexture({
+    label: 'cloud shadow',
+    size: shadowMapSize,
+    format: shadowMapFormat,
+    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+  })
+  const cloudShadow = shadowMap.createView()
   const shared = { device, uniforms }
 
   const [noise, ...graph]: [ComputePass, ...Pass[]] = await Promise.all([
@@ -80,6 +92,9 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     createMultiscatteringPass(shared, { transmittance }, multiscattering),
     createSkyViewPass(shared, { transmittance, multiscattering }, skyView),
     createExposurePass(shared, { skyView }, exposure),
+    createShadowMapPass(shared, { cloudNoise }, cloudShadow),
+    createShaftPass(shared, { transmittance, cloudShadow }),
+    createShaftMeanPass(shared),
     createCloudLayerPass(shared, { transmittance, skyView, cloudNoise }),
     createScenePass(shared, { transmittance, skyView }),
     createPostPass(shared, { exposure, format }),
@@ -89,7 +104,7 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
   device.queue.submit([init.finish()])
   const edges = onEdgeColors && createEdgeSampler(device, format, onEdgeColors)
 
-  // Everything at render scale (the cloud layer at one texel per cell), recreated on resize.
+  // Everything at render scale (the cloud and shaft layers at one texel per cell), recreated on resize.
   let renderTargets: GPUTexture[] = []
   let views: Omit<Targets, 'output'> | undefined
 
@@ -98,22 +113,24 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
       const renderScale = Math.min(1, Math.sqrt(maxScenePixels / (width * height)))
       const sceneWidth = Math.max(1, Math.round(width * renderScale))
       const sceneHeight = Math.max(1, Math.round(height * renderScale))
-      const target = (label: string, format: GPUTextureFormat, cell = 1) =>
+      const target = (label: string, format: GPUTextureFormat, cell = 1, written = GPUTextureUsage.RENDER_ATTACHMENT) =>
         device.createTexture({
           label,
           size: [Math.ceil(sceneWidth / cell), Math.ceil(sceneHeight / cell)],
           format,
-          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+          usage: written | GPUTextureUsage.TEXTURE_BINDING,
         })
       for (const texture of renderTargets) texture.destroy()
       renderTargets = [
         target('cloud layer', cloudFormat, cloudCell),
         target('cloud history', cloudFormat),
         target('cloud history', cloudFormat),
+        target('light shafts', shaftFormat, cloudCell),
+        target('shaft mean', shaftMeanFormat, shaftBlock, GPUTextureUsage.STORAGE_BINDING),
         target('scene', sceneFormat),
       ]
-      const [clouds, history, accumulated, scene] = renderTargets.map((texture) => texture.createView())
-      views = { clouds, history, accumulated, scene }
+      const [clouds, history, accumulated, shafts, shaftMean, scene] = renderTargets.map((texture) => texture.createView())
+      views = { clouds, history, accumulated, shafts, shaftMean, scene }
       return [sceneWidth, sceneHeight]
     },
 
@@ -132,7 +149,9 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     },
 
     destroy() {
-      for (const texture of [...renderTargets, noiseVolume, transmittanceLut, multiscatteringLut, skyViewLut]) texture.destroy()
+      for (const texture of [...renderTargets, noiseVolume, shadowMap, transmittanceLut, multiscatteringLut, skyViewLut]) {
+        texture.destroy()
+      }
       exposure.destroy()
       uniforms.destroy()
       edges?.destroy()

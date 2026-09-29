@@ -52,6 +52,7 @@ const schema = {
   groundAlbedo: 'vec3f',
   ozoneWidth: 'f32',
   nightGlow: 'vec3f', // airglow floor, so night is deep blue rather than black
+  shaftStrength: 'f32', // amplification of the aerosols' forward scattering in sunlit beams
 
   // Clouds (km)
   cloudCoverage: 'f32',

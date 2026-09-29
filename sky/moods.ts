@@ -58,6 +58,11 @@ export interface Mood {
   sunWarmth: number
   /** Multiplier on ozone absorption: the violet-blue of the hour after sunset. */
   ozone: number
+  /**
+   * Multiplier on the aerosols' forward scattering in air lit through the gaps between the heaps:
+   * how bright the light shafts are (0: none beyond what the sky-view LUT holds).
+   */
+  shafts: number
   cloudCoverage: number
   cloudDensity: number
   cirrusCoverage: number
@@ -72,6 +77,7 @@ const moods = {
     mieAnisotropy: 0.84,
     sunWarmth: 0.7,
     ozone: 1.3,
+    shafts: 300,
     cloudCoverage: 0.3,
     cloudDensity: 0.7,
     cirrusCoverage: 0.4,
@@ -84,6 +90,7 @@ const moods = {
     mieAnisotropy: 0.8,
     sunWarmth: 0,
     ozone: 2.6,
+    shafts: 500,
     cloudCoverage: 0.2,
     cloudDensity: 0.6,
     cirrusCoverage: 0.45,
@@ -96,6 +103,7 @@ const moods = {
     mieAnisotropy: 0.85,
     sunWarmth: 0.9,
     ozone: 1.6,
+    shafts: 300,
     cloudCoverage: 0.45,
     cloudDensity: 1,
     cirrusCoverage: 0.3,
@@ -108,6 +116,7 @@ const moods = {
     mieAnisotropy: 0.8,
     sunWarmth: 0,
     ozone: 1,
+    shafts: 500,
     cloudCoverage: 0.15,
     cloudDensity: 0.6,
     cirrusCoverage: 0.2,
@@ -120,6 +129,7 @@ const moods = {
     mieAnisotropy: 0.75,
     sunWarmth: 0.3,
     ozone: 1,
+    shafts: 210,
     cloudCoverage: 0.7,
     cloudDensity: 0.55,
     cirrusCoverage: 0.1,
@@ -174,6 +184,7 @@ export function moodUniforms(mood: Mood): Partial<UniformValues> {
     mieScaleHeight: earth.mieScaleHeight * mood.aerosolHeight,
     mieAnisotropy: mood.mieAnisotropy,
     ozoneAbsorption: scale(earth.ozoneAbsorption, mood.ozone),
+    shaftStrength: mood.shafts,
     cloudCoverage: mood.cloudCoverage,
     cloudDensity: mood.cloudDensity,
     cirrusCoverage: mood.cirrusCoverage,

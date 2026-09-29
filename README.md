@@ -29,9 +29,12 @@ transmittance     —                                      transmittance LUT
 multiscattering   transmittance                          multiscattering LUT
 skyview           transmittance, multiscattering         sky-view LUT (sun layer, moon layer)
 exposure          sky view                               exposure buffer
+cloud shadow      noise                                  cloud shadow map, seen from the key light
+light shafts      transmittance, cloud shadow map        shaft layer, one pixel in 2 × 2
+shaft mean        shaft layer                            average lit share, one texel per 128 px
 cloud layer       transmittance, sky view, noise         cloud layer (jittered), one pixel in 2 × 2
 scene             transmittance, sky view, cloud layer,  scene target + next cloud history
-                  cloud history
+                  cloud history, shaft layer, shaft mean
 post              scene target, exposure                 swap chain
 ```
 
@@ -42,6 +45,9 @@ post              scene target, exposure                 swap chain
 | `multiscattering` | `rgba16float` 32×32             | ψ_ms: every scattering order past the first, 64 directions per texel    |
 | `skyview`         | `rgba16float` 192×108, 2 layers | atmosphere radiance around the observer, lit by the sun / by the moon   |
 | `exposure`        | storage buffer `{ value: f32 }` | meters the sky-view LUT over the view; compressed key; adapts over time |
+| `cloud shadow`    | `rgba16float` 256×256           | Beer shadow map of the cumulus along the key light (Hillaire 2016)      |
+| `light shafts`    | `rgba16float`, ¼ of the scene   | beams of sunlight through the gaps between the heaps, and lit share     |
+| `shaft mean`      | `rgba16float`, 1 per 128 px     | the lit share averaged over wide blocks, so shafts add only contrast    |
 | `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → cirrus + cumulus (radiance, transmittance)     |
 | `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, stars   |
 | `post`            | swap chain                      | upsample, exposure, vignette, AgX, grade, paper, grain, dither, reveal  |
@@ -49,7 +55,7 @@ post              scene target, exposure                 swap chain
 Every pass reads the same `Uniforms` buffer at `@group(0) @binding(0)`. Passes live in
 `sky/passes/`, one file each, and own only their pipelines and bind groups; the renderer owns every
 resource that flows between them, so the data flow reads top to bottom in `renderer.ts`. The whole
-frame takes about 4.5 ms of GPU time at 1440 × 900 on an Apple M1 Pro, a third of it the cloud march.
+frame takes about 5 ms of GPU time at 1440 × 900 on an Apple M1 Pro, a third of it the cloud march.
 
 ## The physics
 
@@ -70,6 +76,23 @@ under a grazing sun so sunset heaps glow through. Ambient light is the sky-view 
 sides seeing only the half of the sky turned from the sun (blue shadows at noon, violet at dusk),
 and grass bounce from below, both dimmed with depth into the heap. At night the moon lights them,
 and they stand dark against the airglow with silver rims.
+
+**Shafts.** Low sunlight pours through the gaps between the heaps in beams that fan out from
+the sun, and converge again opposite it at sunrise. A Beer shadow map (Hillaire 2016) looks along
+the key light (the sun, or the moon at night) over the cloud layer around the observer: per texel,
+where the cumulus begins toward the light, its mean extinction and its optical depth. It is laid
+out in the drifting cloud field and snapped to its texels, so it is redrawn every frame at little
+cost without the shadows ever crawling. Its height follows the light, so a grazing sun gets all
+its texels, and it reaches toward the light only as far as the heaps whose shadows fall to the
+ground nearby, so the heaps in and near view cast the lanes. Each view ray is marched up to the
+cloud tops against it for two things: the aerosols' forward (Mie) scattering of sunlight as if all
+the air were lit, reddened by the light's path, and the share of it that is. The sky-view LUT
+already holds that light on average, never broken by cloud, so what the shafts add is contrast:
+the beam times how far the ray's lit share strays from its mean over wide blocks of the view (the
+`shaft mean` pass). Lit lanes brighten, shaded ones darken a little (keeping their hue, never by
+more than 30 %), and the sky around them keeps its glow. The contrast is amplified per mood
+(`shafts` in `moods.ts`, scaled against each mood's haze), meets the sky with a film-like
+shoulder, and fades out as the sun climbs past 30°.
 
 **Time.** As in Horizon Zero Dawn, the clouds are marched at only one pixel of every 2 × 2 cell
 each frame, taking turns in Bayer order (`interleave.ts`), and every pixel keeps an average of

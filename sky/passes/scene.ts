@@ -1,8 +1,8 @@
 /**
- * The HDR scene: the sky dome along every pixel's view ray, behind the clouds reconstructed from
- * the sparse cloud layer and averaged over frames (temporal accumulation). Writes linear radiance,
- * exposed and tonemapped later by `post`, and the averaged clouds, which become the next frame's
- * history.
+ * The HDR scene: the sky dome along every pixel's view ray, less what the clouds' shadows take
+ * from the air (the light-shaft layer), behind the clouds reconstructed from the sparse cloud
+ * layer and averaged over frames (temporal accumulation). Writes linear radiance, exposed and
+ * tonemapped later by `post`, and the averaged clouds, which become the next frame's history.
  */
 
 import atmosphere from '../shaders/atmosphere.wgsl'
@@ -31,10 +31,10 @@ export async function createScenePass({ device, uniforms }: PassContext, luts: S
   const atmosphereEntries = lutEntries(device, luts)
   const sampler = device.createSampler({ label: 'clouds', magFilter: 'linear', minFilter: 'linear' })
 
-  // Two bind groups per size, one per role of the history pair. The pair and the cloud layer are
-  // recreated together on resize, so the history view alone tells the bind groups apart.
+  // Two bind groups per size, one per role of the history pair. The pair, the cloud layer and the
+  // shaft layers are recreated together on resize, so the history view alone tells them apart.
   const bindGroups = new WeakMap<GPUTextureView, GPUBindGroup>()
-  const bindGroupFor = ({ clouds, history }: Targets) => {
+  const bindGroupFor = ({ clouds, history, shafts, shaftMean }: Targets) => {
     let bindGroup = bindGroups.get(history)
     if (!bindGroup) {
       bindGroup = device.createBindGroup({
@@ -46,6 +46,8 @@ export async function createScenePass({ device, uniforms }: PassContext, luts: S
           { binding: 5, resource: clouds },
           { binding: 6, resource: history },
           { binding: 7, resource: sampler },
+          { binding: 8, resource: shafts },
+          { binding: 9, resource: shaftMean },
         ],
       })
       bindGroups.set(history, bindGroup)
