@@ -33,6 +33,7 @@ const earth = {
   nightGlow: [0.0006, 0.0009, 0.002],
   cloudBottom: 1.5,
   cloudTop: 3.5,
+  altocumulusAltitude: 5,
   cirrusAltitude: 8,
 } as const satisfies Partial<UniformValues>
 
@@ -70,6 +71,13 @@ export interface Mood {
    * 0 keeps them fair-weather cumulus, 1 lets them tower into congestus that fill the layer.
    */
   cloudTowers: number
+  /**
+   * How much of the sky the altocumulus fills: a mackerel sky of small cloudlets in rows at 5 km,
+   * which keeps the sun after the heaps below have lost it and glows across the whole afterglow.
+   */
+  altocumulusCoverage: number
+  /** 0 keeps the altocumulus separate cloudlets; 1 merges them into a flatter altostratus sheet. */
+  altocumulusSheet: number
   cirrusCoverage: number
 }
 
@@ -86,6 +94,8 @@ const moods = {
     cloudCoverage: 0.3,
     cloudDensity: 0.7,
     cloudTowers: 0.4,
+    altocumulusCoverage: 0.3,
+    altocumulusSheet: 0,
     cirrusCoverage: 0.4,
   },
   violetDusk: {
@@ -100,6 +110,8 @@ const moods = {
     cloudCoverage: 0.2,
     cloudDensity: 0.6,
     cloudTowers: 0.15,
+    altocumulusCoverage: 0.6,
+    altocumulusSheet: 0,
     cirrusCoverage: 0.45,
   },
   emberSky: {
@@ -114,6 +126,8 @@ const moods = {
     cloudCoverage: 0.45,
     cloudDensity: 1,
     cloudTowers: 0.9,
+    altocumulusCoverage: 0.4,
+    altocumulusSheet: 0,
     cirrusCoverage: 0.3,
   },
   clear: {
@@ -128,6 +142,8 @@ const moods = {
     cloudCoverage: 0.15,
     cloudDensity: 0.6,
     cloudTowers: 0,
+    altocumulusCoverage: 0.08,
+    altocumulusSheet: 0,
     cirrusCoverage: 0.2,
   },
   softOvercast: {
@@ -142,6 +158,8 @@ const moods = {
     cloudCoverage: 0.7,
     cloudDensity: 0.55,
     cloudTowers: 0.6,
+    altocumulusCoverage: 0.8,
+    altocumulusSheet: 0.7,
     cirrusCoverage: 0.1,
   },
 } as const satisfies Record<string, Mood>
@@ -198,6 +216,8 @@ export function moodUniforms(mood: Mood): Partial<UniformValues> {
     cloudCoverage: mood.cloudCoverage,
     cloudDensity: mood.cloudDensity,
     cloudTowers: mood.cloudTowers,
+    altocumulusCoverage: mood.altocumulusCoverage,
+    altocumulusSheet: mood.altocumulusSheet,
     cirrusCoverage: mood.cirrusCoverage,
   }
 }

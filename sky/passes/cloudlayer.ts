@@ -1,10 +1,11 @@
 /**
- * The cloud layer: cumulus and cirrus along the view ray of one pixel in every cell of the scene
+ * The cloud layer: cumulus, altocumulus and cirrus along the view ray of one pixel in every cell of the scene
  * target (`interleave.ts`), marched with a fresh blue-noise jitter each time. The scene pass fills
  * in the other pixels from history and averages the noise away over frames.
  */
 
 import { blueNoiseEntry } from '../bluenoise'
+import altocumulus from '../shaders/altocumulus.wgsl'
 import atmosphere from '../shaders/atmosphere.wgsl'
 import bluenoise from '../shaders/bluenoise.wgsl'
 import camera from '../shaders/camera.wgsl'
@@ -43,6 +44,7 @@ export async function createCloudLayerPass(
     keylight,
     clouds,
     cumulus,
+    altocumulus,
     cirrus,
     bluenoise,
     cloudlayer,

@@ -44,13 +44,6 @@ fn icePhase(cosTheta: f32) -> f32 {
   return mix(henyeyGreenstein(cosTheta, ICE_FORWARD), henyeyGreenstein(cosTheta, ICE_BACKWARD), ICE_BACKWARD_WEIGHT);
 }
 
-// A smooth displacement field (km) with features about a quarter of `tile` apart.
-fn bend(position: vec2f, tile: f32, slice: f32) -> vec2f {
-  let a = sampleNoise(vec3f(position / tile, slice)).r;
-  let b = sampleNoise(vec3f(position / tile + 0.5, slice + 0.37)).r;
-  return vec2f(a, b) - 0.5;
-}
-
 // Streak density in [0, 1] at a point of the sheet (km, in the plane) that one pixel spans
 // `footprint` km of: wisps where the air is moist enough, frayed into fibres along the flow.
 fn streaks(position: vec2f, footprint: f32) -> f32 {

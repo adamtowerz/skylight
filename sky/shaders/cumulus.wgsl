@@ -278,6 +278,11 @@ fn ambientReach(h: f32, top: f32, extinction: f32) -> vec2f {
   return 1.0 / (1.0 + diffusion * vec2f(max(top - h, 0.0), h));
 }
 
+// How much deeper each multiple-scattering octave reaches under the key light `light`.
+fn octaveReachUnder(light: vec3f) -> f32 {
+  return mix(GRAZING_OCTAVE_REACH, OCTAVE_REACH, smoothstep(GRAZING.x, GRAZING.y, light.y));
+}
+
 fn dropletPhase(cosTheta: f32, anisotropy: f32) -> f32 {
   return mix(henyeyGreenstein(cosTheta, FORWARD * anisotropy), henyeyGreenstein(cosTheta, BACKWARD * anisotropy), BACKWARD_WEIGHT);
 }
@@ -321,7 +326,7 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
   let cosTheta = dot(dir, lighting.keyDirection);
   // Across the sky one march spans a cell of pixels, this many km per km along the ray.
   let footprint = u.cloudCell * 2.0 * u.tanHalfFov.y / u.resolution.y;
-  let octaveReach = mix(GRAZING_OCTAVE_REACH, OCTAVE_REACH, smoothstep(GRAZING.x, GRAZING.y, lighting.keyDirection.y));
+  let octaveReach = octaveReachUnder(lighting.keyDirection);
 
   var radiance = vec3f(0.0);
   var seen = 1.0; // transmittance from the eye to the current sample

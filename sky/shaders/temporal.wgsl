@@ -41,8 +41,8 @@ fn cellPosition(pixel: vec2f) -> vec2f {
 }
 
 // Where the clouds seen along `dir` were last frame, as seen from here: the wind has carried them
-// since, and at the heaps' middle height that drift is also close to the cirrus's in angle (it
-// flies faster but higher).
+// since, and at the heaps' middle height that drift is also the altocumulus's in angle (twice as
+// fast, twice as high) and close to the cirrus's (faster still, but higher).
 fn driftedBack(dir: vec3f) -> vec3f {
   let height = u.bottomRadius + 0.5 * (u.cloudBottom + u.cloudTop);
   let distance = raySphere(observerRadius(), dir.y, height).y;

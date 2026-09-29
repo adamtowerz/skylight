@@ -6,6 +6,7 @@
  * shafts read it (`shafts.wgsl`).
  */
 
+import altocumulus from '../shaders/altocumulus.wgsl'
 import atmosphere from '../shaders/atmosphere.wgsl'
 import cirrus from '../shaders/cirrus.wgsl'
 import cloudshadow from '../shaders/cloudshadow.wgsl'
@@ -48,6 +49,7 @@ export function createShadowMapPass(context: PassContext, { cloudNoise }: Shadow
       cloudshadow,
       clouds,
       cumulus,
+      altocumulus,
       cirrus,
       shadowmap,
     ]),

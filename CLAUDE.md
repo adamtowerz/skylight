@@ -19,7 +19,8 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   noise (once) → transmittance → multiscattering → sky view → exposure → cloud shadow (Beer
   shadow map of the cumulus along the key light, `keylight.wgsl`) → light shafts (beams of
   sunlight through the gaps, one pixel per 2 × 2 cell) → shaft mean (their average lit share) →
-  cloud layer (one pixel per 2 × 2 cell, `interleave.ts`) → scene (sky plus lane contrast, clouds
+  cloud layer (one pixel per 2 × 2 cell, `interleave.ts`; cumulus heaps in front of an
+  altocumulus "mackerel sky" at 5 km, `altocumulus.wgsl`, in front of the cirrus) → scene (sky plus lane contrast, clouds
   rebuilt and averaged over frames) → post (swap chain).
 - `sky/passes/*.ts` one per pass: pipeline + bind groups only. `sky/shaders/*.wgsl` the shaders.
 - `sky/uniforms.ts` the one `Uniforms` schema; `struct.ts` generates both the WGSL struct and the

@@ -48,7 +48,7 @@ post              scene target, exposure                 swap chain
 | `cloud shadow`    | `rgba16float` 256×256           | Beer shadow map of the cumulus along the key light (Hillaire 2016)      |
 | `light shafts`    | `rgba16float`, ¼ of the scene   | beams of sunlight through the gaps between the heaps, and lit share     |
 | `shaft mean`      | `rgba16float`, 1 per 128 px     | the lit share averaged over wide blocks, so shafts add only contrast    |
-| `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → cirrus + cumulus (radiance, transmittance)     |
+| `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → cumulus, altocumulus, cirrus (radiance, T)     |
 | `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, stars   |
 | `post`            | swap chain                      | upsample, exposure, vignette, AgX, grade, paper, grain, dither, reveal  |
 
@@ -67,8 +67,8 @@ change the air itself. Each mood is a set of multipliers on Earth's parameters �
 height and Ångström exponent, Mie anisotropy, ozone (the violet of the blue hour), the sunlight's
 spectral slope — plus cloud cover. Colour comes from amplified physics, never from paint.
 
-**Clouds.** A raymarched cumulus shell at 1.5–3.5 km sits in front of a cirrus sheet at 8 km
-(`clouds.wgsl`, `cumulus.wgsl`, `cirrus.wgsl`). The heaps are built as in Schneider's Nubis: a
+**Clouds.** A raymarched cumulus shell at 1.5–3.5 km sits in front of a thin altocumulus layer at
+5 km and a cirrus sheet at 8 km (`clouds.wgsl`, `cumulus.wgsl`, `altocumulus.wgsl`, `cirrus.wgsl`). The heaps are built as in Schneider's Nubis: a
 weather field sets how much of the sky is cloud and how tall the heaps grow, from fair-weather
 puffs to towering congestus at the hearts of its convection cells (`cloudTowers`, per mood); a
 height gradient turns Perlin–Worley heaps into domes whose own cores push their tops up, and the
@@ -84,13 +84,29 @@ the view ray, so between two samples the march takes the field to run linearly a
 cloud's sharp threshold along the step exactly, and lights each step where the light it sends to
 the eye comes from on average (near the front of a thick step): heap edges move smoothly across
 the steps instead of falling into contour lines, at no extra samples. Sunlight reaches every sample through the transmittance LUT, so after the sun sets at
-the ground the clouds keep catching it, gold, then rose, then the cirrus alone glows pink. Direct
+the ground the clouds keep catching it, gold, then rose, then the altocumulus and cirrus alone glow pink. Direct
 light uses a short light march, a dual-lobe phase function (the silver lining) and
 multiple-scattering octaves after Wrenninge et al. 2013, which reach deeper under a grazing sun so
 sunset heaps glow through. Ambient light is the sky-view LUT, with shaded sides seeing only the half
 of the sky turned from the sun (blue shadows at noon, violet at dusk), and grass bounce from below,
 both dimmed with depth into the heap. At night the moon lights them, and they stand dark against the
 airglow with silver rims.
+
+**Mackerel sky.** Between them lies an altocumulus layer a few hundred metres deep, as much of
+the sky as the mood asks (`altocumulusCoverage`; `altocumulusSheet` merges it into a flatter
+altostratus). Wind shear rolls such a layer into billows whose crests break into rows of small
+cloudlets, so the cloudlets are cells: an ordered cellular lattice in the plane, one row per crest
+along the shear, each cell a soft dome of its own size, joined to its neighbours by a smooth
+minimum; the rows bend with the flow and swell in wave trains, eddies push the cells into lumps
+and short rolls, and finer Worley detail frays and mottles each tuft. The layer is crossed in a
+few steps, each integrating exactly the share of it below the domes' tops, and the light's way
+through a cloudlet is found analytically, to its rim across the plane or out through its top or
+flat base, so a low sun leaves every cloudlet a lit side and a shaded one. Lit through the
+atmosphere at 5 km, it keeps the sun for minutes after the heaps below have lost it and
+burns rose and pink across the whole sky, then greys. Cells a sample cannot resolve fade to their
+mean, so toward the horizon the field merges into an even texture instead of sparkling. It flies
+twice as fast as the heaps at twice their height, the same angular drift, so the cloud history
+follows it exactly.
 
 **Shafts.** Low sunlight pours through the gaps between the heaps in beams that fan out from the
 sun, and converge again opposite it at sunrise. A Beer shadow map (Hillaire 2016) looks along the

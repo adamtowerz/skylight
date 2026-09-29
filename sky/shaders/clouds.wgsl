@@ -1,5 +1,5 @@
-// Clouds along a view ray: a raymarched cumulus shell (cumulus.wgsl) in front of a thin cirrus
-// sheet (cirrus.wgsl), after Schneider 2015 ("The Real-time Volumetric Cloudscapes of Horizon
+// Clouds along a view ray: a raymarched cumulus shell (cumulus.wgsl) in front of a thin layer of
+// altocumulus (altocumulus.wgsl) and a thin cirrus sheet (cirrus.wgsl), after Schneider 2015 ("The Real-time Volumetric Cloudscapes of Horizon
 // Zero Dawn") and Hillaire 2016 ("Physically Based Sky, Atmosphere and Cloud Rendering in
 // Frostbite"). This module holds what both layers share: the noise volume, the light they are
 // lit by, the phase function, and the air between them and the eye.
@@ -29,6 +29,13 @@ fn remap(x: f32, low: f32, high: f32, newLow: f32, newHigh: f32) -> f32 {
 
 fn sampleNoise(p: vec3f) -> vec4f {
   return textureSampleLevel(cloudNoise, noiseSampler, p, 0.0);
+}
+
+// A smooth displacement field (km) with features about a quarter of `tile` apart.
+fn bend(position: vec2f, tile: f32, slice: f32) -> vec2f {
+  let a = sampleNoise(vec3f(position / tile, slice)).r;
+  let b = sampleNoise(vec3f(position / tile + 0.5, slice + 0.37)).r;
+  return vec2f(a, b) - 0.5;
 }
 
 fn henyeyGreenstein(cosTheta: f32, g: f32) -> f32 {
@@ -89,13 +96,18 @@ fn throughAir(layer: vec4f, dir: vec3f, distance: f32) -> vec4f {
 
 // rgb: radiance scattered toward the eye; a: transmittance of whatever lies behind. `jitter` in
 // [0, 1) offsets the raymarch per pixel, trading banding for fine noise that the grain hides.
+// Nearest first: the heaps hide the altocumulus, and both hide the cirrus.
 fn clouds(dir: vec3f, jitter: f32) -> vec4f {
   let lighting = cloudLighting();
-  let low = cumulus(dir, jitter, lighting);
-  // Behind an opaque heap the cirrus cannot show.
-  if (low.a < OPAQUE) {
-    return low;
+  var layers = cumulus(dir, jitter, lighting);
+  if (layers.a < OPAQUE) {
+    return layers;
+  }
+  let middle = altocumulus(dir, jitter, lighting);
+  layers = vec4f(layers.rgb + layers.a * middle.rgb, layers.a * middle.a);
+  if (layers.a < OPAQUE) {
+    return layers;
   }
   let high = cirrus(dir, lighting);
-  return vec4f(low.rgb + low.a * high.rgb, low.a * high.a);
+  return vec4f(layers.rgb + layers.a * high.rgb, layers.a * high.a);
 }
