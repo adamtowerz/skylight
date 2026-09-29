@@ -188,6 +188,9 @@ export function moodUniforms(mood: Mood): Partial<UniformValues> {
 const wind: Vec2 = [0.03, -0.012]
 const evolutionPerSecond = 0.0025
 
+/** How far the wind has carried the clouds after `seconds` of natural time, km. */
+export const windOffset = (seconds: number): Vec2 => [wind[0] * seconds, wind[1] * seconds]
+
 /**
  * Cloud motion as a pure function of simulated time, so scrubbing the clock scrubs the clouds
  * too and a given `?hour=` always shows the same sky. It runs on the clock's natural seconds,
@@ -196,7 +199,7 @@ const evolutionPerSecond = 0.0025
 export function weather(hours: number): Partial<UniformValues> {
   const seconds = naturalSeconds(hours)
   return {
-    cloudWind: [wind[0] * seconds, wind[1] * seconds],
+    cloudWind: windOffset(seconds),
     cloudEvolution: evolutionPerSecond * seconds,
   }
 }

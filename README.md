@@ -29,7 +29,7 @@ transmittance     —                                      transmittance LUT
 multiscattering   transmittance                          multiscattering LUT
 skyview           transmittance, multiscattering         sky-view LUT (sun layer, moon layer)
 exposure          sky view                               exposure buffer
-cloud layer       transmittance, sky view, noise         cloud layer (jittered), ≤ 1.1 MP
+cloud layer       transmittance, sky view, noise         cloud layer (jittered), one pixel in 2 × 2
 scene             transmittance, sky view, cloud layer,  scene target + next cloud history
                   cloud history
 post              scene target, exposure                 swap chain
@@ -42,14 +42,14 @@ post              scene target, exposure                 swap chain
 | `multiscattering` | `rgba16float` 32×32             | ψ_ms: every scattering order past the first, 64 directions per texel    |
 | `skyview`         | `rgba16float` 192×108, 2 layers | atmosphere radiance around the observer, lit by the sun / by the moon   |
 | `exposure`        | storage buffer `{ value: f32 }` | meters the sky-view LUT over the view; compressed key; adapts over time |
-| `cloud layer`     | `rgba16float` cloud layer       | per pixel view ray → cirrus + cumulus (radiance, transmittance)         |
-| `scene`           | `rgba16float` scene + history   | clouds averaged over frames, over the sky (LUT, sun, moon, stars)       |
+| `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → cirrus + cumulus (radiance, transmittance)     |
+| `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, stars   |
 | `post`            | swap chain                      | upsample, exposure, vignette, AgX, grade, paper, grain, dither, reveal  |
 
 Every pass reads the same `Uniforms` buffer at `@group(0) @binding(0)`. Passes live in
 `sky/passes/`, one file each, and own only their pipelines and bind groups; the renderer owns every
 resource that flows between them, so the data flow reads top to bottom in `renderer.ts`. The whole
-frame takes about 6–7 ms of GPU time at 1440 × 900 on an Apple M1 Pro, most of it the cloud march.
+frame takes about 4.5 ms of GPU time at 1440 × 900 on an Apple M1 Pro, a third of it the cloud march.
 
 ## The physics
 
@@ -71,11 +71,14 @@ sides seeing only the half of the sky turned from the sun (blue shadows at noon,
 and grass bounce from below, both dimmed with depth into the heap. At night the moon lights them,
 and they stand dark against the airglow with silver rims.
 
-**Time.** The march is jittered differently every frame and averaged over about ten frames
-(`temporal.wgsl`): everything is at infinity, so last frame's average is found by projecting this
-pixel's direction through last frame's camera, then clipped to this frame's neighbourhood so
-drifting clouds never ghost. Cloud motion is a pure function of simulated time, so scrubbing the
-clock scrubs the clouds.
+**Time.** As in Horizon Zero Dawn, the clouds are marched at only one pixel of every 2 × 2 cell
+each frame, taking turns in Bayer order (`interleave.ts`), and every pixel keeps an average of
+its own jittered marches over about ten turns (`temporal.wgsl`). Everything is at infinity, so
+last frame's average is found by carrying this pixel's direction back along the wind and through
+last frame's camera; it is then clipped to the spread of this frame's marches around the pixel,
+so churning clouds never ghost. While time is scrubbed the past is not trusted, and the pixels
+between fresh marches are filled from them. Cloud motion is a pure function of simulated time,
+so scrubbing the clock scrubs the clouds.
 
 ## Controls
 

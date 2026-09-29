@@ -1,7 +1,8 @@
 /**
- * The HDR scene: the sky dome along every pixel's view ray, behind the cloud layer averaged over
- * frames (temporal accumulation). Writes linear radiance, exposed and tonemapped later by `post`,
- * and the averaged clouds, which become the next frame's history.
+ * The HDR scene: the sky dome along every pixel's view ray, behind the clouds reconstructed from
+ * the sparse cloud layer and averaged over frames (temporal accumulation). Writes linear radiance,
+ * exposed and tonemapped later by `post`, and the averaged clouds, which become the next frame's
+ * history.
  */
 
 import atmosphere from '../shaders/atmosphere.wgsl'
@@ -28,7 +29,7 @@ export async function createScenePass({ device, uniforms }: PassContext, luts: S
   const module = shader(device, 'scene', [uniformsWgsl, common, atmosphere, camera, sky, temporal, scene])
   const pipeline = await createFullscreenPipeline(device, 'scene', module, sceneFormat, cloudFormat)
   const atmosphereEntries = lutEntries(device, luts)
-  const sampler = device.createSampler({ label: 'cloud history', magFilter: 'linear', minFilter: 'linear' })
+  const sampler = device.createSampler({ label: 'clouds', magFilter: 'linear', minFilter: 'linear' })
 
   // Two bind groups per size, one per role of the history pair. The pair and the cloud layer are
   // recreated together on resize, so the history view alone tells the bind groups apart.

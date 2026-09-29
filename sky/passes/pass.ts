@@ -16,7 +16,7 @@ export interface PassContext {
  * (the history pair, which swaps roles, and the output).
  */
 export interface Targets {
-  /** This frame's cloud layer at render scale: one jittered march per pixel. */
+  /** This frame's cloud layer: one jittered march per cell of the scene target. */
   clouds: GPUTextureView
   /** The cloud layer averaged over past frames, as of last frame… */
   history: GPUTextureView

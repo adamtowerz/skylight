@@ -1,6 +1,7 @@
 /**
- * The cloud layer: cumulus and cirrus along every pixel's view ray, marched once per frame with a
- * fresh jitter. Its noise is averaged away over frames by the scene pass.
+ * The cloud layer: cumulus and cirrus along the view ray of one pixel in every cell of the scene
+ * target (`interleave.ts`), marched with a fresh jitter each time. The scene pass fills in the
+ * other pixels from history and averages the noise away over frames.
  */
 
 import atmosphere from '../shaders/atmosphere.wgsl'

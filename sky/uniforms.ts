@@ -6,6 +6,7 @@
 import type { CameraBasis } from './camera'
 import type { Celestial } from './celestial'
 import type { History } from './history'
+import { cloudSchedule } from './interleave'
 import type { Vec2, Vec3 } from './math'
 import { moodUniforms, weather, type Mood } from './moods'
 import { struct, type Schema, type StructValues, type StructWriter } from './struct'
@@ -16,7 +17,6 @@ const schema = {
   outputResolution: 'vec2f', // swap chain, px
   time: 'f32', // real seconds since start
   dt: 'f32', // real seconds since last frame, clamped
-  frame: 'f32', // frames since start: strides the cloud jitter
   reveal: 'f32', // 0 → 1 as the eyes open
 
   // Camera (world frame: x = east, y = up, z = north)
@@ -27,7 +27,8 @@ const schema = {
   previousCameraRight: 'vec3f', // last frame's camera, to reproject the cloud history
   previousCameraUp: 'vec3f',
   previousCameraForward: 'vec3f',
-  historyWeight: 'f32', // how much of the cloud history to keep; 0 starts afresh
+  previousCloudWind: 'vec2f', // last frame's wind offset, to follow the clouds' drift
+  historyTrust: 'f32', // how far to trust the cloud history: 1 while the sky drifts, 0 starts afresh
 
   // Light
   sunDirection: 'vec3f',
@@ -61,6 +62,9 @@ const schema = {
   cloudEvolution: 'f32', // drift through the noise volume's third axis
   cirrusCoverage: 'f32',
   cirrusAltitude: 'f32',
+  cloudCell: 'f32', // side of the cells the cloud layer marches one pixel of per frame, px
+  cloudPhase: 'vec2f', // the pixel of every cell marched this frame
+  cloudVisit: 'f32', // marches each pixel has had before this one: strides the cloud jitter
 
   // Post
   exposureBias: 'f32', // stops
@@ -93,6 +97,7 @@ export interface FrameState {
   outputResolution: Vec2
   time: number
   dt: number
+  /** Frames since start: whose turn it is to be marched. */
   frame: number
   reveal: number
   blankColor: Vec3
@@ -105,6 +110,6 @@ export interface FrameState {
 }
 
 export function fillUniforms(writer: StructWriter<UniformSchema>, state: FrameState) {
-  const { camera, history, sky, mood, hours, ...frame } = state
-  writer.set({ ...frame, ...camera, ...history, ...sky, ...moodUniforms(mood), ...weather(hours), ...post })
+  const { camera, history, sky, mood, hours, frame, ...rest } = state
+  writer.set({ ...rest, ...camera, ...history, ...sky, ...moodUniforms(mood), ...weather(hours), ...cloudSchedule(frame), ...post })
 }

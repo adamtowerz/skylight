@@ -102,12 +102,13 @@ report.
   a soft radial opening; 5000 ms the settled sky.
 - **Motion**: `--params 'speed=20' --motion --wait 2000,6000,10000` (or `speed=1`): clouds must
   drift without smearing, ghosting or shimmer; exposure must not pump. Scrubbing (scroll, arrow keys)
-  resets the TAA history by design.
+  resets the TAA history by design; the clouds then show the 2 × 2 march filled bilinearly.
 - **Frame time**: `node scripts/frametime.mjs --url 'http://localhost:3417/?hour=18.8&speed=0&mood=1'`
   prints median/p90 GPU ms per pass (timestamp queries injected from outside the engine). Budget
-  ≲ 8 ms at 1440×900 on the M1 Pro (about 6 ms today: cloud layer ≈ 4.2, scene 0.6, post 0.4,
-  exposure 0.4). GPU clocks vary: measure before and after back to back, and check a cloudy
-  mood too (`mood=4`, `softOvercast`, has the most cover to march).
+  ≲ 8 ms at 1440×900 on the M1 Pro (about 4.5 ms today: cloud layer ≈ 1.5, scene 1.0, post 0.7,
+  exposure 0.7). GPU clocks vary, and a lighter frame runs at a lower clock (every pass reads
+  slower): measure before and after back to back, compare against a pass whose work did not
+  change (post), and check a cloudy mood too (`mood=4`, `softOvercast`, has the most cover).
 
 ## Failure modes checklist
 

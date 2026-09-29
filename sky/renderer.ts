@@ -4,8 +4,8 @@
  *   noise (compute, once at init)                           cloud noise volume
  *   uniforms → transmittance → multiscattering → sky view   (atmosphere LUTs, compute)
  *            → exposure (compute)
- *            → cloud layer → scene (HDR + cloud history, render scale) → post (swap chain)
- *                                                                     → edges (readback, optional)
+ *            → cloud layer (one pixel per cell) → scene (HDR + cloud history, render scale)
+ *                                               → post (swap chain) → edges (readback, optional)
  *
  * Passes are created in parallel with async pipelines, then run in order every frame. The LUTs
  * are rebuilt every frame too: moods change the air, and together they cost well under a
@@ -15,6 +15,7 @@
 
 import { createEdgeSampler, type EdgeColors } from './edges'
 import type { Gpu } from './gpu'
+import { cloudCell } from './interleave'
 import type { Vec2 } from './math'
 import { lutFormat } from './passes/atmosphere'
 import type { ComputePass } from './passes/compute'
@@ -88,7 +89,7 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
   device.queue.submit([init.finish()])
   const edges = onEdgeColors && createEdgeSampler(device, format, onEdgeColors)
 
-  // Everything at render scale, recreated on resize.
+  // Everything at render scale (the cloud layer at one texel per cell), recreated on resize.
   let renderTargets: GPUTexture[] = []
   let views: Omit<Targets, 'output'> | undefined
 
@@ -97,16 +98,16 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
       const renderScale = Math.min(1, Math.sqrt(maxScenePixels / (width * height)))
       const sceneWidth = Math.max(1, Math.round(width * renderScale))
       const sceneHeight = Math.max(1, Math.round(height * renderScale))
-      const target = (label: string, format: GPUTextureFormat) =>
+      const target = (label: string, format: GPUTextureFormat, cell = 1) =>
         device.createTexture({
           label,
-          size: [sceneWidth, sceneHeight],
+          size: [Math.ceil(sceneWidth / cell), Math.ceil(sceneHeight / cell)],
           format,
           usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         })
       for (const texture of renderTargets) texture.destroy()
       renderTargets = [
-        target('cloud layer', cloudFormat),
+        target('cloud layer', cloudFormat, cloudCell),
         target('cloud history', cloudFormat),
         target('cloud history', cloudFormat),
         target('scene', sceneFormat),
