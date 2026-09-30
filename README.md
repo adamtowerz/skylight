@@ -92,21 +92,25 @@ of the sky turned from the sun (blue shadows at noon, violet at dusk), and grass
 both dimmed with depth into the heap. At night the moon lights them, and they stand dark against the
 airglow with silver rims.
 
-**Mackerel sky.** Between them lies an altocumulus layer a few hundred metres deep, as much of
-the sky as the mood asks (`altocumulusCoverage`; `altocumulusSheet` merges it into a flatter
-altostratus). Wind shear rolls such a layer into billows whose crests break into rows of small
-cloudlets, so the cloudlets are cells: an ordered cellular lattice in the plane, one row per crest
-along the shear, each cell a soft dome of its own size, joined to its neighbours by a smooth
-minimum; the rows bend with the flow and swell in wave trains, eddies push the cells into lumps
-and short rolls, and finer Worley detail frays and mottles each tuft. The layer is crossed in a
-few steps, each integrating exactly the share of it below the domes' tops, and the light's way
-through a cloudlet is found analytically, to its rim across the plane or out through its top or
-flat base, so a low sun leaves every cloudlet a lit side and a shaded one. Lit through the
-atmosphere at 5 km, it keeps the sun for minutes after the heaps below have lost it and
-burns rose and pink across the whole sky, then greys. Cells a sample cannot resolve fade to their
-mean, so toward the horizon the field merges into an even texture instead of sparkling. It flies
-twice as fast as the heaps at twice their height, the same angular drift, so the cloud history
-follows it exactly.
+**Mackerel sky.** Now and then a layer of altocumulus a few hundred metres deep lies between
+them at 5 km. Mid-level moisture comes and goes with the weather (`sky/altocumulus.ts`): each
+13-hour spell draws its own, thinnest near midday, so most skies have none, some a patch, and
+occasionally one has a whole mackerel sky, filling as much of it as the mood allows
+(`altocumulusCoverage`; `altocumulusSheet` merges it into a flatter altostratus). Wind shear rolls
+such a layer into billows whose crests break into rows of small cloudlets, so the cloudlets are
+cells: an ordered cellular lattice in the plane, one row per crest along the shear, each cell a
+soft dome of its own size. Within moist patches the moisture clumps into rafts and bands along the
+crests; in their hearts the cloudlets grow large and fuse with their neighbours (a smooth minimum)
+into rolls, at their fringes they shrink, scatter and go missing. The rows bend with the flow and
+swell on the billows, eddies push the cells about, and finer Worley detail frays each outline and
+heaps it into tufts. The layer is crossed in a few steps, each integrating exactly the share of it
+below the domes' tops, and the light's way through a cloudlet is found analytically, to its rim
+across the plane or out through its top or flat base, so a low sun leaves every cloudlet a lit side
+and a shaded one. Lit through the atmosphere at 5 km, it keeps the sun for minutes after the heaps
+below have lost it and burns rose and pink across the whole sky, then greys. Cells a sample cannot
+resolve fade to their mean, so toward the horizon the field merges into an even texture instead of
+sparkling. It flies twice as fast as the heaps at twice their height, the same angular drift, so
+the cloud history follows it exactly.
 
 **Shafts.** Low sunlight pours through the gaps between the heaps in beams that fan out from the
 sun, and converge again opposite it at sunrise. A Beer shadow map (Hillaire 2016) looks along the

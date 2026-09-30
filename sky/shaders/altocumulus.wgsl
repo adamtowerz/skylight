@@ -5,8 +5,10 @@
 // cloudlets are cells: an ordered cellular (Worley 1996) lattice in the plane of the layer, one row
 // per billow crest along the shear, each cell a soft dome of its own size; the rows bend with the
 // flow (domain warping, Quilez), their billows swell and fade in wave trains, and fine Worley
-// detail frays each cloudlet's rim. Patches of moist air decide where the field forms at all, and
-// where the mood asks for it the cloudlets merge into a flatter altostratus sheet.
+// detail frays each cloudlet's rim and heaps it into tufts. Patches of moist air decide where the
+// field forms at all (as far as the weather brings it, `altocumulus.ts`), and clump into rafts
+// and bands: in their hearts cloudlets grow large and fuse into rolls, at their fringes they
+// shrink, scatter and go missing. Where the mood asks for it they merge into altostratus.
 //
 // The layer is thin, so it is crossed in a few steps, each of which takes the height to run
 // linearly along it and integrates, exactly, the share of it below the cloudlet tops: a slab march
@@ -40,45 +42,58 @@ const CELL = vec2f(0.38, 0.65);
 const CELL_JITTER = vec2f(0.2, 0.5);
 const CELL_WANDER = 0.08;
 // A cloudlet's radius in cells where the field is thickest (at 0.5 neighbours touch), and how far
-// radii vary from cell to cell (a share of it).
-const CLOUDLET_RADIUS = 0.45;
-const CLOUDLET_SIZES = vec2f(0.35, 1.3);
+// radii vary from cell to cell (a share of it): in the field's heart most are large and merge
+// with their neighbours into rolls and rafts, at its fringes most are small and scattered.
+const CLOUDLET_RADIUS = 0.55;
+const CLOUDLET_SIZES = vec2f(0.3, 1.5);
+// The share of cells with no cloudlet at all, at the fringes of the field and in its heart, and
+// the spread of random draws over which a cloudlet shrinks away, so none pops as the field drifts.
+const MISSING = vec2f(0.5, 0.05);
+const VANISHING = 0.1;
 // The furthest a cloudlet reaches from its centre, in cells, before the fray swells it by up to
-// 1 / (1 − ALTO_FRAY / 2): within the 3 × 3 cells searched, whose other cloudlets lie at least
-// 1.5 − CELL_JITTER.y / 2 − CELL_WANDER away, so none is ever cut off at a cell's edge.
-const CLOUDLET_REACH = 0.65;
+// 1 / (1 − ALTO_FRAY / 2) and a merge by up to MERGE / 4 of its radius more: within the 3 × 3
+// cells searched, whose other cloudlets lie at least 1.5 − CELL_JITTER.y / 2 − CELL_WANDER away,
+// so none is ever cut off at a cell's edge.
+const CLOUDLET_REACH = 0.6;
 // Typical spacing of the cloudlets that lookups must resolve, km: the small ones between the big.
 const CLOUDLET_SPACING = 0.5 * CELL.x;
 // The billows: along the shear their crests come every BILLOW km, and cloudlets swell on them and
 // shrink between them (a share of the radius), so the field lies in rows; over wave trains
 // WAVE_TRAIN km long the billows themselves swell and fade.
 const BILLOW = 1.2;
-const BILLOW_SWELL = 0.45;
+const BILLOW_SWELL = 0.6;
 const WAVE_TRAIN = 7.0;
 const WAVE_SWELL = 0.25;
 // The flow bends the rows over tens of km.
 const ROW_BEND_TILE = 60.0;
 const ROW_BEND = 3.0;
-// Moist patches where the layer forms, and the half-width of their soft edges.
+// Moist patches where the layer forms, and the half-width of their soft edges. Within them the
+// moisture clumps into rafts and bands lying along the billow crests (tiles in km along the shear
+// and across it), with wide gaps between.
 const ALTO_PATCH_TILE = 30.0;
-const ALTO_PATCH_EDGE = 0.2;
+const ALTO_PATCH_EDGE = 0.15;
+const CLUMP_TILE = vec2f(6.0, 16.0);
+const CLUMPING = 0.5;
 // Eddies about the size of a cloudlet push the cells about, km, so that no two cloudlets share a
 // shape and neighbours merge into lumps and short rolls.
 const CLOUDLET_EDDY_TILE = 4.0;
 const CLOUDLET_EDDY = 0.25;
 // How far merging neighbours round off the seam between them, in units of their radii.
-const MERGE = 0.35;
+const MERGE = 0.5;
 // Worley detail finer than the cells, which lumps each cloudlet's outline (in units of its
-// radius) and mottles its body (a share of its density), so it reads as a tuft, not a blot. Only
+// radius) and heaps it into tufts, raising some parts of its top and thinning others (shares of
+// its height and density), so it reads as a cotton puff, not a blot. Only
 // the volume's finer Worley octaves (B and A, 8 and 16 cells across a tile and up): the coarsest
 // one's flat facets, as large as a cloudlet, would cut it into a polygon.
-const FRAY_TILE = 3.0;
+const FRAY_TILE = 2.0;
 const FRAY_WEIGHTS = vec2f(0.6, 0.4);
 const ALTO_FRAY = 0.8;
-const MOTTLE = 0.5;
+const MOTTLE = 0.6;
+const TUFTS = 0.35;
 const FRAY_SPACING = FRAY_TILE / 16.0;
-// Extinction inside a cloudlet, km⁻¹: thinner than a heap's core, so rims glow through.
-const ALTO_EXTINCTION = 24.0;
+// Extinction inside a cloudlet, km⁻¹: thinner than a heap's core, so rims and thin tufts glow
+// through with the sky behind.
+const ALTO_EXTINCTION = 16.0;
 // Churn of the cells, km of the noise volume's evolution per full cycle.
 const ALTO_CHURN = 2.0;
 // Steps through the layer: a few, and more where the ray crosses resolved cloudlets obliquely, at
@@ -115,48 +130,63 @@ fn altoSpace(p: vec3f) -> vec2f {
   return p.xz - u.cloudWind * ALTO_SPEED;
 }
 
+// How much of the sky the layer fills today: the mood's share, as far as the weather brings it.
+fn altoCoverage() -> f32 {
+  return u.altocumulusCoverage * u.altocumulusPresence;
+}
+
 fn altoWeather(position: vec2f) -> AltoWeather {
   let evolution = 0.02 * u.cloudEvolution;
   let patches = sampleNoise(vec3f(position / ALTO_PATCH_TILE, 0.7 + evolution)).r;
-  let edge = 1.0 - u.altocumulusCoverage;
-  let cover = saturate(remap(patches, edge - ALTO_PATCH_EDGE, edge + ALTO_PATCH_EDGE, 0.0, 1.0));
+  let banded = vec2f(dot(position, SHEAR), dot(position, vec2f(-SHEAR.y, SHEAR.x))) / CLUMP_TILE;
+  let clumps = sampleNoise(vec3f(banded, 0.3 + evolution)).r;
+  let edge = 1.0 - altoCoverage();
+  let moisture = mix(patches, clumps, CLUMPING);
+  let cover = saturate(remap(moisture, edge - ALTO_PATCH_EDGE, edge + ALTO_PATCH_EDGE, 0.0, 1.0));
   return AltoWeather(cover, ROW_BEND * bend(position, ROW_BEND_TILE, 0.15 + evolution));
 }
 
-// Two independent random numbers in [0, 1) and a third for a lattice cell.
-fn cellRandom(cell: vec2f) -> vec3f {
+// Four independent random numbers in [0, 1) for a lattice cell.
+fn cellRandom(cell: vec2f) -> vec4f {
   let id = bitcast<vec2u>(vec2i(cell));
   let a = pcg(id.x ^ pcg(id.y));
   let b = pcg(a);
-  return vec3f(f32(a & 0xffffu), f32(a >> 16u), f32(b & 0xffffu)) / 65536.0;
+  return vec4f(vec4u(a & 0xffffu, a >> 16u, b & 0xffffu, b >> 16u)) / 65536.0;
 }
 
 // The nearest cloudlet around a point of the field: how far the point lies from its centre over
-// its radius (< 1 inside it), and in which direction (cells). From the 3 × 3 cells around the
+// its radius (< 1 inside it), in which direction, and its radius (cells), where the field is
+// `cover` thick. From the 3 × 3 cells around the
 // point; neighbours join smoothly (a polynomial smooth minimum, Quilez) rather than in the creases
 // of a Voronoi diagram.
 struct Nearest {
   distance: f32,
   heading: vec2f,
+  size: f32,
 }
 
-fn nearestCloudlet(cells: vec2f, radius: f32) -> Nearest {
+fn nearestCloudlet(cells: vec2f, radius: f32, cover: f32) -> Nearest {
   let cell = floor(cells);
   let f = cells - cell;
   let churn = TAU * u.cloudEvolution / ALTO_CHURN;
-  var nearest = Nearest(2.0, vec2f(1.0, 0.0));
+  let missing = mix(MISSING.x, MISSING.y, cover);
+  var nearest = Nearest(2.0, vec2f(1.0, 0.0), radius);
   var closest = 2.0;
   for (var i = 0; i < 9; i++) {
     let offset = vec2f(f32(i % 3 - 1), f32(i / 3 - 1));
     let random = cellRandom(cell + offset);
     let wander = CELL_WANDER * vec2f(sin(churn + TAU * random.x), cos(churn + TAU * random.y));
     let centre = offset + 0.5 + CELL_JITTER * (random.xy - 0.5) + wander;
-    let size = min(radius * mix(CLOUDLET_SIZES.x, CLOUDLET_SIZES.y, random.z), CLOUDLET_REACH);
+    let present = saturate((random.w - missing) / VANISHING);
+    let draw = mix(random.z * random.z, sqrt(random.z), cover);
+    let grown = radius * mix(CLOUDLET_SIZES.x, CLOUDLET_SIZES.y, draw);
+    let size = max(min(grown, CLOUDLET_REACH) * present, 1e-3);
     let away = f - centre;
     let distance = length(away) / size;
     if (distance < closest) {
       closest = distance;
       nearest.heading = away / max(length(away), 1e-6);
+      nearest.size = size;
     }
     let seam = max(MERGE - abs(distance - nearest.distance), 0.0) / MERGE;
     nearest.distance = min(nearest.distance, distance) - 0.25 * MERGE * seam * seam;
@@ -187,30 +217,34 @@ fn cloudlets(position: vec2f, weather: AltoWeather, footprint: f32, toLight: vec
   let sharp = resolved(CLOUDLET_SPACING, footprint);
   // The billows only where the cloudlets that show them are resolved: without them, a bare wave.
   let radius = CLOUDLET_RADIUS * sqrt(weather.cover) * mix(1.0, billows, sharp) * swell;
-  let nearest = nearestCloudlet(vec2f(along, dot(flow, across)) / CELL, radius);
+  let nearest = nearestCloudlet(vec2f(along, dot(flow, across)) / CELL, radius, weather.cover);
   var distance = nearest.distance;
   let fine = resolved(FRAY_SPACING, footprint);
   var mottle = 1.0;
+  var tufts = 1.0;
   if (fine > 0.0 && distance < 1.0 + 0.5 * ALTO_FRAY) {
     let detail = dot(sampleNoise(vec3f(flow / FRAY_TILE, 0.4 + 0.1 * u.cloudEvolution)).ba, FRAY_WEIGHTS);
     distance += fine * ALTO_FRAY * (0.5 - detail);
     mottle = 1.0 - fine * MOTTLE * (1.0 - detail);
+    tufts = 1.0 - fine * TUFTS * (1.0 - detail);
   }
-  // A hemisphere's height, and a density thinning to nothing at the rim, less where the field
-  // fringes out; together a column as thick as (1 − n²)^1.5, which averages ⅖ over the disk.
+  // A hemisphere's height, and a density thinning softly to nothing at the rim, less where the
+  // field fringes out; together a column as thick as (1 − n²)^2.5, which averages ²⁄₇ over the
+  // disk, of which a cell holds πr² less the missing share.
   let rim = saturate(1.0 - distance * distance);
   let thickness = mix(0.5, 1.0, weather.cover);
-  let mean = 0.4 * thickness * min(PI * radius * radius, 1.0);
+  let present = 1.0 - mix(MISSING.x, MISSING.y, weather.cover);
+  let mean = 2.0 / 7.0 * thickness * present * min(PI * radius * radius, 1.0);
   // The light's way to the rim: the cloudlet as a unit disk with the point `distance` out from
   // its centre, and the light crossing it at `light` radii per km.
-  let light = vec2f(dot(toLight.xz, SHEAR), dot(toLight.xz, across)) / (CELL * radius);
+  let light = vec2f(dot(toLight.xz, SHEAR), dot(toLight.xz, across)) / (CELL * nearest.size);
   let reach = dot(light, light);
   let b = distance * dot(nearest.heading, light);
   let c = distance * distance - 1.0;
   let chord = (sqrt(max(b * b - reach * c, 0.0)) - b) / max(reach, 1e-8);
   let shape = Cloudlets(
-    mix(1.0, sqrt(rim), sharp),
-    mix(mean, thickness * rim * mottle, sharp),
+    mix(1.0, sqrt(rim) * tufts, sharp),
+    mix(mean, thickness * rim * rim * mottle, sharp),
     mix(ALTO_LIGHT_REACH, min(chord, ALTO_LIGHT_REACH), sharp),
   );
   // Merged into altostratus: a sheet through most of the layer, the cells a texture on it.
@@ -224,7 +258,7 @@ fn cloudlets(position: vec2f, weather: AltoWeather, footprint: f32, toLight: vec
 
 // rgb: radiance toward the eye; a: transmittance.
 fn altocumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
-  if (u.altocumulusCoverage <= 0.0) {
+  if (altoCoverage() <= 0.0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
   let r = observerRadius();

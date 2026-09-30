@@ -5,6 +5,7 @@
  * sunsets look alike.
  */
 
+import { altocumulusPresence } from './altocumulus'
 import { naturalSeconds } from './clock'
 import { lerp, multiply, scale, smoothstep, type Vec2, type Vec3 } from './math'
 import type { UniformValues } from './uniforms'
@@ -72,8 +73,9 @@ export interface Mood {
    */
   cloudTowers: number
   /**
-   * How much of the sky the altocumulus fills: a mackerel sky of small cloudlets in rows at 5 km,
-   * which keeps the sun after the heaps below have lost it and glows across the whole afterglow.
+   * How much of the sky the altocumulus fills when the weather brings it (`altocumulus.ts`): a
+   * mackerel sky of small cloudlets in rows at 5 km, which keeps the sun after the heaps below have
+   * lost it and glows across the whole afterglow.
    */
   altocumulusCoverage: number
   /** 0 keeps the altocumulus separate cloudlets; 1 merges them into a flatter altostratus sheet. */
@@ -94,7 +96,7 @@ const moods = {
     cloudCoverage: 0.3,
     cloudDensity: 0.7,
     cloudTowers: 0.4,
-    altocumulusCoverage: 0.3,
+    altocumulusCoverage: 0.25,
     altocumulusSheet: 0,
     cirrusCoverage: 0.4,
   },
@@ -110,7 +112,7 @@ const moods = {
     cloudCoverage: 0.2,
     cloudDensity: 0.6,
     cloudTowers: 0.15,
-    altocumulusCoverage: 0.6,
+    altocumulusCoverage: 0.7,
     altocumulusSheet: 0,
     cirrusCoverage: 0.45,
   },
@@ -126,7 +128,7 @@ const moods = {
     cloudCoverage: 0.45,
     cloudDensity: 1,
     cloudTowers: 0.9,
-    altocumulusCoverage: 0.4,
+    altocumulusCoverage: 0.3,
     altocumulusSheet: 0,
     cirrusCoverage: 0.3,
   },
@@ -142,7 +144,7 @@ const moods = {
     cloudCoverage: 0.15,
     cloudDensity: 0.6,
     cloudTowers: 0,
-    altocumulusCoverage: 0.08,
+    altocumulusCoverage: 0.05,
     altocumulusSheet: 0,
     cirrusCoverage: 0.2,
   },
@@ -158,7 +160,7 @@ const moods = {
     cloudCoverage: 0.7,
     cloudDensity: 0.55,
     cloudTowers: 0.6,
-    altocumulusCoverage: 0.8,
+    altocumulusCoverage: 0.6,
     altocumulusSheet: 0.7,
     cirrusCoverage: 0.1,
   },
@@ -234,14 +236,15 @@ const evolutionPerSecond = 0.0025
 export const windOffset = (seconds: number): Vec2 => [wind[0] * seconds, wind[1] * seconds]
 
 /**
- * Cloud motion as a pure function of simulated time, so scrubbing the clock scrubs the clouds
- * too and a given `?hour=` always shows the same sky. It runs on the clock's natural seconds,
- * so the drift looks equally calm at noon and at sunset.
+ * Cloud motion, and whether there is altocumulus, as a pure function of simulated time, so
+ * scrubbing the clock scrubs the clouds too and a given `?hour=` always shows the same sky. The
+ * motion runs on the clock's natural seconds, so the drift looks equally calm at noon and at sunset.
  */
 export function weather(hours: number): Partial<UniformValues> {
   const seconds = naturalSeconds(hours)
   return {
     cloudWind: windOffset(seconds),
     cloudEvolution: evolutionPerSecond * seconds,
+    altocumulusPresence: altocumulusPresence(hours),
   }
 }

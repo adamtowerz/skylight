@@ -62,7 +62,8 @@ const schema = {
   cloudTop: 'f32',
   cloudWind: 'vec2f', // accumulated offset
   cloudEvolution: 'f32', // drift through the noise volume's third axis
-  altocumulusCoverage: 'f32',
+  altocumulusCoverage: 'f32', // when the weather brings it
+  altocumulusPresence: 'f32', // how far it does, 0 → 1
   altocumulusSheet: 'f32', // 0: a mackerel sky of separate cloudlets, 1: merged into altostratus
   altocumulusAltitude: 'f32', // middle of the layer
   cirrusCoverage: 'f32',

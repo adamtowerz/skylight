@@ -11,8 +11,8 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
 ## Map
 
 - `sky/index.ts` `start(canvas)`: per frame the CPU advances `clock.ts`, places sun/moon
-  (`celestial.ts`) and camera (`camera.ts`), picks the mood (`moods.ts`), fills the uniforms and
-  calls `renderer.render`.
+  (`celestial.ts`) and camera (`camera.ts`), picks the mood (`moods.ts`) and whether the weather
+  brings altocumulus (`altocumulus.ts`), fills the uniforms and calls `renderer.render`.
 - `sky/renderer.ts` owns every shared GPU resource (uniform and exposure buffers, LUTs, noise
   volume, cloud shadow map, shaft and cloud layers, history pair, scene target) and encodes the
   frame graph in order:
