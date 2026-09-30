@@ -64,7 +64,8 @@ const kinds: Record<keyof Weather, Kind> = {
     spellHours: 17,
     salt: 23,
     forms: 0.5,
-    whole: 0.95,
+    // Most foggy mornings bring a mist the heaps glow through; only the rarest spell a thick bank.
+    whole: 1.1,
     daily: (hour) => smoothstep(2, 7, since(21, hour)) * (1 - smoothstep(9.5, 12.5, since(21, hour))),
   },
   // Haze: warm afternoons stir dust, pollen and humid aerosols up into a deepening boundary layer;
@@ -119,17 +120,18 @@ export function hazy(mood: Mood, haze: number): Mood {
 
 /**
  * Radiation fog, made physical: a layer of droplets on the ground, the eye inside it near the
- * bottom. Thicker fog is both deeper and denser: from a mist a few tens of metres deep that lets
- * the blue through overhead to a 200 m bank that hides the sun (visibility 3.9 / extinction ≈ 100 m).
+ * bottom. Thicker fog is both deeper and denser: from a mist a few tens of metres deep that
+ * softens the heaps to a 200 m bank (visibility 3.9 / extinction ≈ 400 m) through which only
+ * the sun's disc and the brightest heaps still show: the sky is the point, so it never walls it off.
  */
 const fogDepth = { thin: 0.06, thick: 0.2 } // km of fog above the eye
-const thickFogExtinction = 36 // km⁻¹, grey: droplets are far larger than light's wavelengths
+const thickFogExtinction = 10 // km⁻¹, grey: droplets are far larger than light's wavelengths
 
 /** The weather's uniforms, besides the haze that goes into the mood's air (`hazy`). */
 export function weatherUniforms({ altocumulus, fog }: Weather): Partial<UniformValues> {
   return {
     altocumulusPresence: altocumulus,
     fogDepth: lerp(fogDepth.thin, fogDepth.thick, fog),
-    fogExtinction: thickFogExtinction * fog ** 2.5,
+    fogExtinction: thickFogExtinction * fog ** 0.7,
   }
 }

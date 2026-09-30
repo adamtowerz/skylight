@@ -141,14 +141,15 @@ salt per kind, so the kinds are independent), eased into the next, and the kind 
 draw passes a threshold, so most spells bring none, some a little and a few the whole thing. The
 hour of day then shapes it after the physics that makes it. The mackerel sky is one kind, thinnest
 at midday. *Radiation fog* forms on still, humid nights as the ground cools, thickens from 23:00 to
-04:00, is thickest around sunrise and burns off between 06:30 and 09:30: misty sunrises, about one morning
-in three. *Haze* builds through warm afternoons, lasts through the golden hour and settles out in
+04:00, is thickest around sunrise and burns off between 06:30 and 09:30: misty sunrises, about one
+morning in three, most of them a mist the heaps glow through and only rarely a thick bank. *Haze* builds through warm afternoons, lasts through the golden hour and settles out in
 the night; it multiplies the mood's aerosols (and lifts them a little higher), so the Hillaire
 atmosphere does the rest: a whiter sky, a softer sun, redder and dimmer heaps, stronger light
 shafts. The salts are chosen so the opening seeds keep their skies.
 
 Fog is a layer of droplets on the ground with the eye inside it (`fog.wgsl`): 60–200 m of it
-above the eye, visibility down to 100 m. It is thin and nearly uniform, and droplets far larger than
+above the eye, visibility down to about 400 m, so even the thickest still shows the sun's disc and
+the brightest heaps: seeing the sky is the point. It is thin and nearly uniform, and droplets far larger than
 the light's wavelengths scatter every colour alike, so it needs no march: it is a plane-parallel
 slab of grey, conservative scatterers, solved in closed form per pixel. Everything beyond it (sky,
 shafts, clouds, sun, moon, and through the scene's alpha the stars) is dimmed by exp(−τ/μ), so thin
@@ -158,11 +159,14 @@ for a conservative slab, and where it seems to come from broadens with every sca
 droplets' forward phase, g ≈ 0.85, raised to the number of scatterings), so a thin mist glows
 around the sun and a thick bank is evenly luminous. Half of what a droplet takes out of a beam
 it only diffracts, a few degrees forward, and that light is the sun's soft white disc and its
-aureole. The sky lights the fog from all around, and moonlight does what sunlight does, so at night
-the moon hangs in a pale halo while the stars fade. Fog lies in banks about a kilometre across, so a
-low sun slants in through their tops and sides: at sunrise the fog glows peach and gold, at sunset
-rose. Its top is ragged, its thickness breathing with slow noise carried by the breeze at the ground,
-so thin fog opens into patches of blue. Exposure meters the fogged sky, and like a photographer
+aureole. The whole sky dome lights the fog, weighted as the irradiance it sends onto its top, and
+the grass bounces part of what gets through back up, so the fog mixes every colour of the sky into
+one milky light; moonlight does what sunlight does, so at night the moon hangs in a pale halo while
+the stars fade. Fog lies in banks a few kilometres across, so a low sun slants in a little through
+their tops and sides: at sunrise the fog glows peach, at sunset rose. Its top is ragged, its
+thickness breathing with slow noise drawn out along the breeze at the ground into soft wisps, so
+the veil thins into patches where the blue and the heaps show through; and the lower in the view,
+the more fog the eye looks through. Exposure meters the fogged sky, and like a photographer
 exposing for fog or snow it opens up by up to 0.8 stop as the fog veils the view, so fog reads as
 luminous rather than grey. When there is no fog none of this is computed.
 
