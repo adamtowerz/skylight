@@ -1,5 +1,5 @@
 /**
- * From HDR radiance to the screen: upsample, add the stars at the display's own resolution,
+ * From HDR radiance to the screen: upsample, add the stars and the rain at the display's own resolution,
  * expose, vignette, tonemap, grade, paper, grain, dither, and the eyes-opening reveal from the
  * blank colour.
  */
@@ -9,6 +9,7 @@ import celestial from '../shaders/celestial.wgsl'
 import common from '../shaders/common.wgsl'
 import cubemap from '../shaders/cubemap.wgsl'
 import post from '../shaders/post.wgsl'
+import rain from '../shaders/rain.wgsl'
 import seenStars from '../shaders/seenstars.wgsl'
 import starfield from '../shaders/starfield.wgsl'
 import starlight from '../shaders/starlight.wgsl'
@@ -33,7 +34,7 @@ export async function createPostPass(
   { device, uniforms }: PassContext,
   { exposure, catalogueCells, catalogueEntries, seen, starCount, format }: PostInputs,
 ): Promise<Pass> {
-  const sources = [uniformsWgsl, common, camera, celestial, cubemap, starLayoutWgsl(starCount), seenStars, starlight, starfield, post]
+  const sources = [uniformsWgsl, common, camera, celestial, cubemap, starLayoutWgsl(starCount), seenStars, starlight, starfield, rain, post]
   const module = shader(device, 'post', sources)
   const pipeline = await createFullscreenPipeline(device, 'post', module, format)
   const sampler = device.createSampler({ label: 'post', magFilter: 'linear', minFilter: 'linear' })

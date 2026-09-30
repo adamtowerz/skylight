@@ -99,7 +99,7 @@ function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onL
       reveal: smoothstep(0, revealSeconds, time - revealStart),
       blankColor,
       hours: clock.hours,
-      weather: { ...weatherAt(clock.hours), ...params.weather },
+      weather: weatherAt(clock.hours, params.weather),
       camera: view,
       history: history.next(view, clock.hours),
       sky,

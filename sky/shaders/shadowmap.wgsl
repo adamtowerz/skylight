@@ -14,6 +14,10 @@
 // SHADOW_FADE so heaps drift in and out of reach unseen. Those are the heaps in and near view,
 // whose lit gaps and shaded lanes the air shows as beams; beyond them lies a bank that would
 // shade it all.
+//
+// The deck (deck.wgsl), when there is one, is a thin sheet at its base as far as its shadows go:
+// its column is taken where the line climbs through the base, below the heaps, so the air under
+// a whole deck is shaded and lit only beneath its gaps.
 
 @group(0) @binding(7) var shadowMap: texture_storage_2d<rgba16float, write>;
 
@@ -25,6 +29,8 @@ const SHADOW_FADE = 10.0; // km
 const MAX_SHADOW_STEPS = 256.0;
 // Deeper than this no light passes anyway; the cap keeps the premultiplied fronts in f16 range.
 const MAX_SHADOW_DEPTH = 64.0;
+// The sheet the deck's column is spread over, km.
+const DECK_SHEET = 0.3;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -66,6 +72,17 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     depth += density * SHADOW_STEP;
     squares += density * density * SHADOW_STEP;
     front += (s + 0.5 * SHADOW_STEP) * (before - exp(-extinction * depth));
+  }
+  // The deck, where the line climbs up through its base toward the light.
+  let b = dot(origin, frame.toward);
+  let crossing = b * b - dot(origin, origin) + pow(u.bottomRadius + u.deckBase, 2.0);
+  if (u.deckCover > 0.0 && crossing >= 0.0) {
+    let s = sqrt(crossing) - b;
+    let density = deckDepthAt(origin + frame.toward * s, SHADOW_STEP) / (extinction * DECK_SHEET);
+    let before = exp(-extinction * depth);
+    depth += density * DECK_SHEET;
+    squares += density * density * DECK_SHEET;
+    front += (s + 0.5 * DECK_SHEET) * (before - exp(-extinction * depth));
   }
   let opticalDepth = min(extinction * depth, MAX_SHADOW_DEPTH);
   let taken = 1.0 - exp(-extinction * depth);

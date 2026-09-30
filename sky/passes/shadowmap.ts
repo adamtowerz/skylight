@@ -13,7 +13,10 @@ import cloudshadow from '../shaders/cloudshadow.wgsl'
 import clouds from '../shaders/clouds.wgsl'
 import common from '../shaders/common.wgsl'
 import cumulus from '../shaders/cumulus.wgsl'
+import deck from '../shaders/deck.wgsl'
+import decklight from '../shaders/decklight.wgsl'
 import keylight from '../shaders/keylight.wgsl'
+import slab from '../shaders/slab.wgsl'
 import shadowmap from '../shaders/shadowmap.wgsl'
 import { shader } from '../shader'
 import { uniformsWgsl } from '../uniforms'
@@ -49,6 +52,9 @@ export function createShadowMapPass(context: PassContext, { cloudNoise }: Shadow
       cloudshadow,
       clouds,
       cumulus,
+      slab,
+      decklight,
+      deck,
       altocumulus,
       cirrus,
       shadowmap,

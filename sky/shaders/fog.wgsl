@@ -1,31 +1,20 @@
 // Radiation fog: a layer of droplets lying on the ground, the eye inside it near the bottom, so
 // everything else (the air above, the clouds, the sun, moon and stars) is seen through it. The
-// layer is thin and nearly uniform, and droplets far larger than light's wavelengths scatter all
-// colours alike, so it needs no march: it is a plane-parallel slab of grey, conservative
-// scatterers, solved in closed form per view ray.
+// layer is thin and nearly uniform, so it needs no march: it is a plane-parallel slab of grey,
+// conservative scatterers (slab.wgsl), solved in closed form per view ray.
 //
 // What lies beyond comes through dimmed by exp(−τ/μ): τ is the fog's optical depth above the eye,
 // μ the view's zenith cosine, so thin fog still shows the blue straight up and hides it at a slant.
 // The light it takes away is not lost but scattered, over and over, and comes out below as a
-// diffuse glow. How much of the sunlight on the fog's top gets through, direct or diffuse, is the
-// two-stream (Eddington) solution for a conservative slab (Shettle & Weinman 1970; Bohren 1987,
-// "Multiple scattering of light and some of its observable consequences"). Where that diffuse
-// light seems to come from broadens with every scattering: the droplets' forward phase (g ≈ 0.85)
-// raised to the number of scatterings a ray has suffered, so a thin mist glows around the sun and
-// a thick bank is an even, luminous white. The moon lights it the same way; the sky's own light
-// comes in from the whole dome, and the grass below bounces some of it back up, so the fog mixes
-// every colour of the sky into one milky light.
+// diffuse glow, around the sun in a thin mist and even in a thick bank. The moon lights it the
+// same way; the sky's own light comes in from the whole dome, and the grass below bounces some of
+// it back up, so the fog mixes every colour of the sky into one milky light.
 //
 // The fog's top is ragged: its thickness breathes with low-frequency noise, carried slowly
 // overhead by the breeze at the ground and churning more slowly still, so that thin fog opens
 // into patches of blue and the veil is never flat. Everything is smooth in the view direction and
 // in time, so nothing flickers.
 
-// Mean cosine of scattering by fog droplets in visible light.
-const FOG_ANISOTROPY = 0.85;
-// Half of what a droplet takes out of a beam it only diffracts, into a cone a few degrees wide
-// (the extinction paradox): the phase of light scattered by diffraction alone.
-const DIFFRACTION = 0.96;
 // Size of the fog top's wisps east–west and north–south, km: drawn out along the breeze, which
 // blows from the west. And how far their thickness strays from the mean (±).
 const WISP_SIZE = vec2f(0.3, 0.12);
@@ -41,6 +30,13 @@ const BANK_WIDTH = 3.0;
 const DOME_RINGS = array(vec2f(0.259, 0.35), vec2f(0.766, 0.5)); // (sine of elevation, weight)
 const DOME_ZENITH = 0.15;
 
+// The glow of a light on the fog's top (slab.wgsl): a bank lets a low light in no more grazing
+// than its sides allow. `path` scales the diffuse part by how much fog the eye looks through (see
+// `fogAlong`).
+fn fogGlow(dir: vec3f, light: vec3f, illuminance: vec3f, tau: f32, path: f32) -> vec3f {
+  return slabGlow(dir, light, max(light.y, u.fogDepth / BANK_WIDTH), illuminance, tau, path);
+}
+
 // Optical depth of the fog straight above the eye where view ray `dir` leaves it.
 fn fogDepthAbove(dir: vec3f) -> f32 {
   let leaves = dir.xz / max(dir.y, GRAZING) * u.fogDepth;
@@ -49,32 +45,6 @@ fn fogDepthAbove(dir: vec3f) -> f32 {
   // Stretched so the wisps span their full range: thick ribbons and thin places between them.
   let wisps = smoothstep(0.2, 0.8, noise);
   return u.fogExtinction * u.fogDepth * (1.0 + RAGGEDNESS * (2.0 * wisps - 1.0));
-}
-
-// Eddington's reflectance of a conservative slab of optical depth `tau` lit from zenith cosine
-// `mu`; whatever it does not reflect, it transmits, direct or diffuse.
-fn fogReflectance(tau: f32, mu: f32) -> f32 {
-  let diffusion = 0.75 * (1.0 - FOG_ANISOTROPY) * tau;
-  return (diffusion + (0.5 - 0.75 * mu) * (1.0 - exp(-tau / mu))) / (1.0 + diffusion);
-}
-
-// Radiance of the light a light of illuminance `illuminance` (on the fog's top, from `light`)
-// sends down through the fog toward the eye along `dir`, less what it lets through unscattered.
-// `path` scales the diffuse part by how much fog the eye looks through (see `fogAlong`).
-fn fogGlow(dir: vec3f, light: vec3f, illuminance: vec3f, tau: f32, path: f32) -> vec3f {
-  let mu = max(light.y, u.fogDepth / BANK_WIDTH);
-  let direct = exp(-tau / mu);
-  let cosTheta = dot(dir, light);
-  // Light only ever diffracted keeps close to the light's direction: its soft disc and aureole.
-  let diffracted = exp(-0.5 * tau / mu) - direct;
-  // The rest is diffuse, and each scattering blurs its forward peak further; its phase is
-  // normalised over the lower hemisphere as it goes from the light's direction (g → 1) to
-  // uniform (g → 0).
-  let diffuse = max(1.0 - fogReflectance(tau, mu) - direct - diffracted, 0.0);
-  let g = pow(FOG_ANISOTROPY, 1.0 + tau / mu);
-  let hemisphere = 0.25 * (1.0 - g) + g * mu;
-  return illuminance * (diffracted * henyeyGreenstein(cosTheta, DIFFRACTION)
-    + path * mu * diffuse * henyeyGreenstein(cosTheta, g) / hemisphere);
 }
 
 // The sky's radiance on the fog's top, averaged over the whole dome as the irradiance it sends:
@@ -109,9 +79,9 @@ fn fogAlong(dir: vec3f) -> vec4f {
   let r = observerRadius();
   let sun = u.sunIlluminance * transmittance(r, u.sunDirection.y);
   let moon = u.moonIlluminance * transmittance(r, u.moonDirection.y);
-  let sky = path * skyOnFog() * max(1.0 - fogReflectance(tau, 0.5) - exp(-2.0 * tau), 0.0);
+  let sky = path * skyOnFog() * max(1.0 - slabReflectance(tau, 0.5) - exp(-2.0 * tau), 0.0);
   let glow = fogGlow(dir, u.sunDirection, sun, tau, path) + fogGlow(dir, u.moonDirection, moon, tau, path) + sky;
   // What gets through lights the grass, and the fog sends part of its bounce back down again.
-  let bounce = 1.0 / (1.0 - u.groundAlbedo * fogReflectance(tau, 0.5));
+  let bounce = 1.0 / (1.0 - u.groundAlbedo * slabReflectance(tau, 0.5));
   return vec4f(glow * bounce, through);
 }

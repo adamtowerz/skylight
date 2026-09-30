@@ -7,9 +7,11 @@ const TAU = 6.28318530717959;
 // any sequence can (a Weyl sequence), which makes it the ideal stride between successive jitters.
 const GOLDEN_RATIO = 0.618033988749895;
 
-// Written by the exposure pass, read by post: a multiplier on scene radiance.
+// Written by the exposure pass, read by post: a multiplier on scene radiance, and the sky dome's
+// mean radiance (cosine-weighted), which is what a raindrop shows.
 struct Exposure {
   value: f32,
+  dome: vec3f,
 }
 
 // Rec. 709 luminance weights.

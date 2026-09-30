@@ -10,7 +10,7 @@ import { cloudSchedule } from './interleave'
 import type { Vec2, Vec3 } from './math'
 import { drift, moodUniforms, type Mood } from './moods'
 import { struct, type Schema, type StructValues, type StructWriter } from './struct'
-import { hazy, weatherUniforms, type Weather } from './weather'
+import { weathered, weatherUniforms, type Weather } from './weather'
 
 const schema = {
   // Frame
@@ -79,6 +79,12 @@ const schema = {
   fogWind: 'vec2f', // accumulated offset of its wisps
   fogChurn: 'f32', // drift of its thickness through the noise's third axis
 
+  // Deck and rain (km, mm/h): a low grey deck of stratus and nimbostratus, and the rain from it
+  deckCover: 'f32', // share of the sky it covers
+  deckBase: 'f32', // height of its base, on average
+  deckDepth: 'f32', // optical depth of its thickest columns
+  rainRate: 'f32',
+
   // Post
   exposureBias: 'f32', // stops
   grain: 'f32',
@@ -130,7 +136,7 @@ export function fillUniforms(writer: StructWriter<UniformSchema>, state: FrameSt
     ...camera,
     ...history,
     ...sky,
-    ...moodUniforms(hazy(mood, weather.haze)),
+    ...moodUniforms(weathered(mood, weather)),
     ...weatherUniforms(weather),
     ...drift(hours),
     ...cloudSchedule(frame),

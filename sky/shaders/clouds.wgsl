@@ -1,4 +1,5 @@
-// Clouds along a view ray: a raymarched cumulus shell (cumulus.wgsl) in front of a thin layer of
+// Clouds along a view ray: a low grey deck when the weather brings one (deck.wgsl), then a
+// raymarched cumulus shell (cumulus.wgsl) in front of a thin layer of
 // altocumulus (altocumulus.wgsl) and a thin cirrus sheet (cirrus.wgsl), after Schneider 2015 ("The Real-time Volumetric Cloudscapes of Horizon
 // Zero Dawn") and Hillaire 2016 ("Physically Based Sky, Atmosphere and Cloud Rendering in
 // Frostbite"). This module holds what both layers share: the noise volume, the light they are
@@ -91,10 +92,16 @@ fn throughAir(layer: vec4f, dir: vec3f, distance: f32) -> vec4f {
 
 // rgb: radiance scattered toward the eye; a: transmittance of whatever lies behind. `jitter` in
 // [0, 1) offsets the raymarch per pixel, trading banding for fine noise that the grain hides.
-// Nearest first: the heaps hide the altocumulus, and both hide the cirrus.
+// Nearest first: a whole deck hides everything, the heaps hide the altocumulus, and all of them
+// hide the cirrus.
 fn clouds(dir: vec3f, jitter: f32) -> vec4f {
   let lighting = cloudLighting();
-  var layers = cumulus(dir, jitter, lighting);
+  var layers = deck(dir, lighting);
+  if (layers.a < OPAQUE) {
+    return layers;
+  }
+  let heaps = cumulus(dir, jitter, lighting);
+  layers = vec4f(layers.rgb + layers.a * heaps.rgb, layers.a * heaps.a);
   if (layers.a < OPAQUE) {
     return layers;
   }

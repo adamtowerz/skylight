@@ -13,6 +13,7 @@ import common from '../shaders/common.wgsl'
 import fog from '../shaders/fog.wgsl'
 import scene from '../shaders/scene.wgsl'
 import sky from '../shaders/sky.wgsl'
+import slab from '../shaders/slab.wgsl'
 import temporal from '../shaders/temporal.wgsl'
 import valueNoise from '../shaders/valuenoise.wgsl'
 import { shader } from '../shader'
@@ -32,7 +33,7 @@ export interface SceneInputs {
 }
 
 export async function createScenePass({ device, uniforms }: PassContext, { milkyWay, ...luts }: SceneInputs): Promise<Pass> {
-  const module = shader(device, 'scene', [uniformsWgsl, common, atmosphere, camera, celestial, valueNoise, sky, fog, temporal, scene])
+  const module = shader(device, 'scene', [uniformsWgsl, common, atmosphere, camera, celestial, valueNoise, sky, slab, fog, temporal, scene])
   const pipeline = await createFullscreenPipeline(device, 'scene', module, sceneFormat, cloudFormat)
   const fixedEntries = [...lutEntries(device, luts), ...milkyWayEntries(device, milkyWay)]
   const sampler = device.createSampler({ label: 'clouds', magFilter: 'linear', minFilter: 'linear' })

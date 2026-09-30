@@ -48,14 +48,14 @@ post              scene target, exposure, seen stars    swap chain
 | `transmittance`   | `rgba16float` 256×64            | transmittance to space per (r, μ) (Hillaire 2020, Bruneton's mapping)   |
 | `multiscattering` | `rgba16float` 32×32             | ψ_ms: every scattering order past the first, 64 directions per texel    |
 | `skyview`         | `rgba16float` 192×108, 2 layers | atmosphere radiance around the observer, lit by the sun / by the moon   |
-| `exposure`        | storage buffer `{ value: f32 }` | meters the sky-view LUT through the fog over the view; compressed key; adapts |
+| `exposure`        | storage buffer `{ value, dome }` | meters the sky-view LUT through the deck and fog over the view; compressed key; adapts; the dome's mean for the rain |
 | `cloud shadow`    | `rgba16float` 256×256           | Beer shadow map of the cumulus along the key light (Hillaire 2016)      |
 | `light shafts`    | `rgba16float`, ¼ of the scene   | beams of sunlight through the gaps between the heaps, and lit share     |
 | `shaft mean`      | `rgba16float`, 1 per 128 px     | the lit share averaged over wide blocks, so shafts add only contrast    |
-| `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → cumulus, altocumulus, cirrus (radiance, T)     |
+| `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → deck, cumulus, altocumulus, cirrus (radiance, T) |
 | `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, Milky Way; fog |
 | `stars`           | storage buffer, 1 per star      | each star's place, colour, twinkle and light through the air and clouds |
-| `post`            | swap chain                      | upsample, stars, exposure, vignette, AgX, grade, paper, grain, dither, reveal |
+| `post`            | swap chain                      | upsample, stars, rain, exposure, vignette, AgX, grade, paper, grain, dither, reveal |
 
 Every pass reads the same `Uniforms` buffer at `@group(0) @binding(0)`. Passes live in
 `sky/passes/`, one file each, and own only their pipelines and bind groups; the renderer owns every
@@ -170,6 +170,43 @@ the more fog the eye looks through. Exposure meters the fogged sky, and like a p
 exposing for fog or snow it opens up by up to 0.8 stop as the fog veils the view, so fog reads as
 luminous rather than grey. When there is no fog none of this is computed.
 
+About one day in six a front brings a *deck*, a low grey layer of stratus and nimbostratus
+(`deck.wgsl`), on spells of its own, whatever the hour: first a broken stratocumulus at 1.2 km
+with blue (or the sunset) between its cells, then, as it lowers to 600 m and thickens, the
+unbroken grey dome of a rainy day. It is far too thick and even to march, so like the fog it is a
+slab solved in closed form (`slab.wgsl`, shared with the fog), found where each view ray meets
+its base: the key light and the whole dome light its top, and what the eye sees is what diffuses
+through (`decklight.wgsl`), so its underside is a luminous soft grey, brighter where it is thinner
+and toward the sun, and limb-darkened like light escaping a star (the CIE overcast sky is about
+three times brighter overhead than at the horizon). Its base is never flat: wind shear rolls it
+into long soft billows, darker where the column is deeper and sags lower, Worley lumps mottle it,
+and under a whole deck ragged scud hurries past beneath, lower and so faster across the sky. At
+sunset the deck can catch fire from below: a sun just under the horizon shines up along a path
+that dips beneath the base and climbs back to its height tens of kilometres off, so where the deck
+breaks there the low red light floods in and lights the underside of the rolls that face it. The
+deck hides whatever lies above it through the scene's alpha (heaps, mackerel sky, cirrus, moon and
+stars), its optical depth joins the cumulus in the shadow map, so a whole deck shades the light
+shafts away, and the exposure meters the sky through it and opens up as it veils the view, so a
+grey day reads soft rather than muddy. It comes in on clean air behind a front, so the far haze
+that reddens the sunlight goes as it closes in, and it allows no radiation fog.
+
+Rain falls only from a thick deck, in showers a few hours long (`precipitation`, 1 being light
+rain, 2 mm/h). The rain between the deck and the eye veils the sky a little with the light under
+the deck, and washes some aerosol out of the air. The nearest few metres of it are drawn drop by
+drop by `post` at the display's own pixels (`rain.wgsl`), after the temporal accumulation, so
+the streaks are crisp and never smeared. Lying on our back, the rain comes straight down at us, so
+every drop's path radiates from one vanishing point near the zenith, tilted upwind by the breeze,
+and lengthens toward the edges of the view. The drops live on nested cylinders about the fall line
+(Tatarchuk 2006's rain layers, turned upward), each a lattice in azimuth and cot θ scrolling at the
+drops' fall speed, one hashed drop per cell at most, so a pixel looks at only a few cells. Each drop
+is a streak where it fell during the eye's exposure, box-filtered over each pixel so none crawls,
+and blurred by the eye's focus on the sky, so the nearest drift past large and soft. Its light is
+Garg & Nayar's: a drop is a tiny fisheye onto the dome above it, so it shows the dome's mean (the
+exposure pass meters it), and seen from below against an overcast, drops are grey, as snowflakes
+are. Their number and size follow Marshall & Palmer from the rain rate, so heavier rain is the
+same drops, more, larger and faster. Far rain is not drawn drop by drop: its drops are finer than a
+pixel and their share of each falls as fast as their number grows, so it sums to the deck's veil.
+
 **Stars.** The stars are the real sky's: the Yale Bright Star Catalogue down to magnitude 5.5,
 2,887 stars packed into 17 KB (`sky/brightstars.ts`, generated by `scripts/stars.mjs`; the
 catalogue is public domain), turning with the Earth over a mid-August sky at 40° N, so Vega passes
@@ -218,7 +255,7 @@ so scrubbing the clock scrubs the clouds.
 | `?seed=3`      | start at one of the opening moments in `sky/seeds.ts`    |
 | `?speed=0`     | time multiplier; 0 freezes the clock                     |
 | `?mood=2`      | which mood the first twilight shows                      |
-| `?fog=0.6`     | hold a kind of weather (`fog`, `haze`, `altocumulus`) at a value 0–1 |
+| `?fog=0.6`     | hold a kind of weather (`fog`, `haze`, `altocumulus`, `deck`, `precipitation`) at a value 0–1 |
 
 Moods, in order: `goldenHaze`, `violetDusk`, `emberSky`, `clear`, `softOvercast`. The sun sets at
 18:52; golden hour is about 18.0–18.8, the pink and violet afterglow 18.9–19.4.
