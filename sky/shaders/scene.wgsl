@@ -1,10 +1,11 @@
 // The HDR scene: the sky behind, the clouds in front, linear radiance out. The cloud layer
 // arrives sparse and noisy (one jittered march per cell) and is reconstructed and averaged over
-// frames here; the sky is exact every frame, so the sun, moon and stars never smear. Light shafts
+// frames here; the sky is exact every frame, so the sun and moon never smear. Light shafts
 // (shafts.wgsl) join the sky between the clouds, upsampled from the shaft layer: each ray's beam
 // times how far its lit share strays from the average around it, so lit lanes brighten, shaded
 // ones darken a little, and the sky around them keeps its glow. The averaged clouds go out as well, to become next
-// frame's history.
+// frame's history. The stars are not drawn here but by `post`, at the display's resolution: the
+// scene's alpha tells it how much of the sky beyond each pixel shows past the moon and clouds.
 
 @group(0) @binding(8) var shaftLayer: texture_2d<f32>; // one texel per cell, like the cloud layer
 @group(0) @binding(9) var shaftMean: texture_2d<f32>; // the average lit share, per block
@@ -41,10 +42,12 @@ fn main(@builtin(position) position: vec4f) -> Scene {
   let shaftUv = position.xy / (u.cloudCell * vec2f(textureDimensions(shaftLayer)));
   let beams = shaftsAt(shaftUv);
   let lit = beams.a - textureSampleLevel(shaftMean, bilinear, position.xy / u.resolution, 0.0).r;
-  let air = skyRadiance(dir);
+  let dome = skyRadiance(dir);
+  let air = dome.rgb;
   let brightness = max(luminance(air), 1e-9);
   let light = beams.rgb * max(lit, 0.0);
   let shade = min(SHADE * luminance(beams.rgb) * max(-lit, 0.0) / brightness, LANE_DEPTH);
   let sky = air * (1.0 - shade) + light / (1.0 + luminance(light) / brightness);
-  return Scene(vec4f(sky * clouds.a + clouds.rgb, 1.0), clouds);
+  // Alpha: the view to space past the moon and the clouds, for the stars `post` draws.
+  return Scene(vec4f(sky * clouds.a + clouds.rgb, dome.a * clouds.a), clouds);
 }

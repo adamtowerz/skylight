@@ -9,7 +9,7 @@ back again, lingering at dusk and dawn, and no two sunsets look the same.
 
 The page is prerendered as a blank screen, white or black to match the device theme: about 2 KB of gzipped HTML with its CSS
 inlined, no fonts, no stylesheet to wait for. After hydration, `components/sky.tsx` lazily imports
-the engine (`sky/`, a separate ≈ 28 KB chunk with all the shaders), which compiles its pipelines
+the engine (`sky/`, a separate ≈ 74 KB chunk with the shaders and bright stars), which compiles its pipelines
 in parallel and then opens onto the scene in-shader, like eyes opening. Without WebGPU, or if the
 GPU is lost, a still CSS dusk fades in instead.
 
@@ -25,6 +25,7 @@ on every offset) and encodes the frame graph (`sky/renderer.ts`):
 ```
 pass              reads                                  writes
 noise (once)      —                                      cloud noise volume, 128³
+milky way (once)  —                                      Milky Way map, equirectangular
 transmittance     —                                      transmittance LUT
 multiscattering   transmittance                          multiscattering LUT
 skyview           transmittance, multiscattering         sky-view LUT (sun layer, moon layer)
@@ -33,14 +34,17 @@ cloud shadow      noise                                  cloud shadow map, seen 
 light shafts      transmittance, cloud shadow map        shaft layer, one pixel in 2 × 2
 shaft mean        shaft layer                            average lit share, one texel per 128 px
 cloud layer       transmittance, sky view, noise         cloud layer (jittered), one pixel in 2 × 2
-scene             transmittance, sky view, cloud layer,  scene target + next cloud history
-                  cloud history, shaft layer, shaft mean
-post              scene target, exposure                 swap chain
+scene             transmittance, sky view, cloud layer,  scene target (+ view to space) + next
+                  cloud history, shaft layer, shaft mean, cloud history
+                  Milky Way map
+stars             transmittance, scene target, catalogue every star as seen this frame
+post              scene target, exposure, seen stars    swap chain
 ```
 
 | Pass              | Output                          | Does                                                                    |
 | ----------------- | ------------------------------- | ----------------------------------------------------------------------- |
 | `noise`           | `rgba8unorm` 128³, once         | tileable Perlin–Worley + Worley fBm for the clouds (Schneider 2015)     |
+| `milky way`       | `rgba16float` 1024×512, once    | the Milky Way over the equatorial sphere: disk, bulge, star clouds, dust |
 | `transmittance`   | `rgba16float` 256×64            | transmittance to space per (r, μ) (Hillaire 2020, Bruneton's mapping)   |
 | `multiscattering` | `rgba16float` 32×32             | ψ_ms: every scattering order past the first, 64 directions per texel    |
 | `skyview`         | `rgba16float` 192×108, 2 layers | atmosphere radiance around the observer, lit by the sun / by the moon   |
@@ -49,8 +53,9 @@ post              scene target, exposure                 swap chain
 | `light shafts`    | `rgba16float`, ¼ of the scene   | beams of sunlight through the gaps between the heaps, and lit share     |
 | `shaft mean`      | `rgba16float`, 1 per 128 px     | the lit share averaged over wide blocks, so shafts add only contrast    |
 | `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → cumulus, altocumulus, cirrus (radiance, T)     |
-| `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, stars   |
-| `post`            | swap chain                      | upsample, exposure, vignette, AgX, grade, paper, grain, dither, reveal  |
+| `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, Milky Way |
+| `stars`           | storage buffer, 1 per star      | each star's place, colour, twinkle and light through the air and clouds |
+| `post`            | swap chain                      | upsample, stars, exposure, vignette, AgX, grade, paper, grain, dither, reveal |
 
 Every pass reads the same `Uniforms` buffer at `@group(0) @binding(0)`. Passes live in
 `sky/passes/`, one file each, and own only their pipelines and bind groups; the renderer owns every
@@ -128,6 +133,28 @@ strays from its mean over wide blocks of the view (the `shaft mean` pass). Lit l
 shaded ones darken a little (keeping their hue, never by more than 30 %), and the sky around them
 keeps its glow. The contrast is amplified per mood (`shafts` in `moods.ts`, scaled against each
 mood's haze), meets the sky with a film-like shoulder, and fades out as the sun climbs past 30°.
+
+**Stars.** The stars are the real sky's: the Yale Bright Star Catalogue down to magnitude 5.5,
+2,887 stars packed into 17 KB (`sky/brightstars.ts`, generated by `scripts/stars.mjs`; the
+catalogue is public domain), turning with the Earth over a mid-August sky at 40° N, so Vega passes
+near the zenith, Arcturus sinks in the west and the Milky Way arches overhead through Cygnus. Below
+them a procedural field of fainter stars, to magnitude 8, gives the sky depth: at most one per cell
+of an equi-angular cube map, their counts rising about 2.8 times per magnitude and crowding toward
+the galactic plane. They are drawn by `post`, after the scene's upsampling and temporal
+accumulation, at the display's own pixels, so they are pin-sharp at any pixel ratio and never
+smear. The `stars` pass first sees every star once per frame (where it falls, its colour and
+twinkle, what the air and the clouds let through); the catalogue is binned by cube-map cell on
+the CPU, so each pixel looks only at the few stars that can reach it, and each star's light is a Gaussian integrated exactly over each pixel's
+square, so its total never depends on where it falls within a pixel and nothing sparkles as the sky
+turns. A faint wide halo, the lens's scattered light, shows only around the brightest, which look
+larger as well as brighter. Flux follows magnitude (Pogson), colour the Planckian locus at each
+star's temperature (from B − V), fading to white for faint stars as it does for the eye's rods. The
+air extinguishes and reddens them through the transmittance LUT, the moon and the clouds hide them
+through the scene's alpha (its view to space: thin cirrus dims them, heaps hide them), and near the
+horizon they twinkle gently, with scintillation growing as air mass^1.75. Behind them the Milky Way
+is a soft glow at about the airglow's brightness (`milkyway.wgsl`), brightest toward Sagittarius and
+in the Cygnus star clouds, mottled and split by the Great Rift's dust; the moonlit sky washes it out.
+By day none of it is looked for: even Sirius would be lost in the sky.
 
 **Time.** As in Horizon Zero Dawn, the clouds are marched at only one pixel of every 2 × 2 cell
 each frame, taking turns in Bayer order (`interleave.ts`), and every pixel keeps an average of

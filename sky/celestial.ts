@@ -8,6 +8,11 @@ import { add, basisMatrix, cross, dot, radians, scale, type Mat4, type Vec3 } fr
 
 const latitude = radians(40)
 const sunDeclination = radians(15)
+/**
+ * The sun's right ascension at that declination in mid-August, so evenings have the real summer
+ * sky: Vega near the zenith, Arcturus in the west, the Milky Way overhead through Cygnus.
+ */
+const sunRightAscension = radians(141.8)
 /** A waxing gibbous moon trailing the sun, so evenings get moonlight. */
 const moonHourOffset = radians(-150)
 const moonDeclination = radians(5)
@@ -42,7 +47,10 @@ export interface Celestial {
   sunDirection: Vec3
   moonDirection: Vec3
   moonIlluminance: Vec3
-  /** Columns are the celestial basis in local coordinates, so stars turn with the Earth. */
+  /**
+   * Columns are the J2000 equatorial basis (x toward RA 0h, y toward 6h, z the pole) in local
+   * coordinates, so the stars turn with the Earth.
+   */
   skyRotation: Mat4
 }
 
@@ -51,11 +59,12 @@ export function celestial(hour: number): Celestial {
   const sun = onSphere(h, sunDeclination)
   const moon = onSphere(h + moonHourOffset, moonDeclination)
   const illuminatedFraction = (1 - dot(sun, moon)) / 2
-  const x = equator(h)
+  // Local sidereal time is the hour angle of RA 0h; RA 6h lies east of it, x × pole here.
+  const x = equator(h + sunRightAscension)
   return {
     sunDirection: sun,
     moonDirection: moon,
     moonIlluminance: scale(fullMoonIlluminance, illuminatedFraction),
-    skyRotation: basisMatrix(x, cross(pole, x), pole),
+    skyRotation: basisMatrix(x, cross(x, pole), pole),
   }
 }

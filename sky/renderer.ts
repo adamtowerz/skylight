@@ -2,13 +2,16 @@
  * Owns every GPU resource that flows between passes and encodes the frame graph:
  *
  *   noise (compute, once at init)                           cloud noise volume
+ *   milky way (compute, once at init)                       its map over the celestial sphere
  *   blue noise (CPU, once at init)                          jitter mask
+ *   star catalogue (CPU, once at init)                      bright stars, binned by cell
  *   uniforms → transmittance → multiscattering → sky view   (atmosphere LUTs, compute)
  *            → exposure (compute)
  *            → cloud shadow (compute, the cumulus seen from the key light)
  *            → light shafts (one pixel per cell) → shaft mean (their average lit share)
  *            → cloud layer (one pixel per cell) → scene (HDR + cloud history, render scale)
- *                                               → post (swap chain) → edges (readback, optional)
+ *                                               → stars (every star as seen this frame, compute)
+ *                                               → post (+ stars, swap chain) → edges (readback, optional)
  *
  * Passes are created in parallel with async pipelines, then run in order every frame. The LUTs
  * are rebuilt every frame too: moods change the air, and together they cost well under a
@@ -17,6 +20,7 @@
  */
 
 import { blueNoise, blueNoiseFormat, blueNoiseSize } from './bluenoise'
+import { seenStarSize, seenStarSlots, starCatalogue } from './catalogue'
 import { createEdgeSampler, type EdgeColors } from './edges'
 import type { Gpu } from './gpu'
 import { cloudCell } from './interleave'
@@ -25,6 +29,7 @@ import { lutFormat } from './passes/atmosphere'
 import type { ComputePass } from './passes/compute'
 import { cloudFormat, createCloudLayerPass } from './passes/cloudlayer'
 import { createExposurePass, exposureBufferSize } from './passes/exposure'
+import { createMilkyWayPass, milkyWayFormat, milkyWaySize } from './passes/milkyway'
 import { createMultiscatteringPass, multiscatteringSize } from './passes/multiscattering'
 import { createNoisePass, noiseFormat, noiseSize } from './passes/noise'
 import type { Pass, Targets } from './passes/pass'
@@ -34,6 +39,7 @@ import { createShaftMeanPass, shaftBlock, shaftMeanFormat } from './passes/shaft
 import { createShaftPass, shaftFormat } from './passes/shafts'
 import { createShadowMapPass, shadowMapFormat, shadowMapSize } from './passes/shadowmap'
 import { createSkyViewPass, skyViewSize } from './passes/skyview'
+import { createStarsPass } from './passes/stars'
 import { createTransmittancePass, transmittanceSize } from './passes/transmittance'
 import { Uniforms } from './uniforms'
 
@@ -79,6 +85,13 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
   })
   const cloudNoise = noiseVolume.createView()
+  const milkyWayMap = device.createTexture({
+    label: 'milky way',
+    size: milkyWaySize,
+    format: milkyWayFormat,
+    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
+  })
+  const milkyWay = milkyWayMap.createView()
   const shadowMap = device.createTexture({
     label: 'cloud shadow',
     size: shadowMapSize,
@@ -93,10 +106,21 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
   const jitterMask = blueNoiseMask.createView()
+  const catalogue = starCatalogue()
+  const storage = (label: string, data: Uint32Array<ArrayBuffer> | Float32Array<ArrayBuffer>) => {
+    const buffer = device.createBuffer({ label, size: data.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
+    device.queue.writeBuffer(buffer, 0, data)
+    return buffer
+  }
+  const catalogueStars = storage('catalogue', catalogue.stars)
+  const catalogueCells = storage('catalogue cells', catalogue.cells)
+  const catalogueEntries = storage('catalogue entries', catalogue.entries)
+  const seenStars = device.createBuffer({ label: 'seen stars', size: seenStarSlots(catalogue.count) * seenStarSize, usage: GPUBufferUsage.STORAGE })
   const shared = { device, uniforms }
 
   const passes = Promise.all([
     createNoisePass(shared, cloudNoise),
+    createMilkyWayPass(shared, milkyWay),
     createTransmittancePass(shared, transmittance),
     createMultiscatteringPass(shared, { transmittance }, multiscattering),
     createSkyViewPass(shared, { transmittance, multiscattering }, skyView),
@@ -105,14 +129,16 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     createShaftPass(shared, { transmittance, cloudShadow, blueNoise: jitterMask }),
     createShaftMeanPass(shared),
     createCloudLayerPass(shared, { transmittance, skyView, cloudNoise, blueNoise: jitterMask }),
-    createScenePass(shared, { transmittance, skyView }),
-    createPostPass(shared, { exposure, format }),
+    createScenePass(shared, { transmittance, skyView, milkyWay }),
+    createStarsPass(shared, { transmittance, catalogue: catalogueStars, seen: seenStars, count: catalogue.count }),
+    createPostPass(shared, { exposure, catalogueCells, catalogueEntries, seen: seenStars, starCount: catalogue.count, format }),
   ])
   // Generated while the pipelines compile.
   device.queue.writeTexture({ texture: blueNoiseMask }, blueNoise(), { bytesPerRow: blueNoiseSize }, [blueNoiseSize, blueNoiseSize])
-  const [noise, ...graph]: [ComputePass, ...Pass[]] = await passes
+  const [noise, drawMilkyWay, ...graph]: [ComputePass, ComputePass, ...Pass[]] = await passes
   const init = device.createCommandEncoder({ label: 'init' })
   noise.encode(init)
+  drawMilkyWay.encode(init)
   device.queue.submit([init.finish()])
   const edges = onEdgeColors && createEdgeSampler(device, format, onEdgeColors)
 
@@ -161,11 +187,10 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     },
 
     destroy() {
-      for (const texture of [...renderTargets, noiseVolume, shadowMap, blueNoiseMask, transmittanceLut, multiscatteringLut, skyViewLut]) {
+      for (const texture of [...renderTargets, noiseVolume, milkyWayMap, shadowMap, blueNoiseMask, transmittanceLut, multiscatteringLut, skyViewLut]) {
         texture.destroy()
       }
-      exposure.destroy()
-      uniforms.destroy()
+      for (const buffer of [exposure, catalogueStars, catalogueCells, catalogueEntries, seenStars, uniforms]) buffer.destroy()
       edges?.destroy()
       context.unconfigure()
     },

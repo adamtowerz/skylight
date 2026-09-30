@@ -1,6 +1,7 @@
 // From HDR radiance to the screen, in the order light meets film and paper:
-// exposure → vignette → AgX tonemap → grade → paper → grain → soft quantization,
+// stars → exposure → vignette → AgX tonemap → grade → paper → grain → soft quantization,
 // then the eyes-opening reveal from the blank colour. The goal is emotion, not a photograph.
+// The stars join the upsampled scene here, at the display's own pixels (`starfield.wgsl`).
 
 @group(0) @binding(1) var<storage, read> exposure: Exposure;
 @group(0) @binding(2) var scene: texture_2d<f32>;
@@ -101,7 +102,8 @@ fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {
   let aspect = vec2f(u.outputResolution.x / u.outputResolution.y, 1.0);
   let r = length((uv - 0.5) * aspect) / length(0.5 * aspect);
 
-  let hdr = textureSample(scene, sceneSampler, uv).rgb;
+  let sky = textureSample(scene, sceneSampler, uv).rgb;
+  let hdr = sky + stars(pixel, sky);
   let firstLight = mix(REVEAL_DARKNESS, REVEAL_GLARE, luminance(u.blankColor));
   let eyes = mix(firstLight, 1.0, u.reveal);
   let exposed = hdr * exposure.value * exp2(u.exposureBias) * eyes * vignette(r);

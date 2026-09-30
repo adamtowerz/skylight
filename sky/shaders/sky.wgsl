@@ -1,5 +1,5 @@
 // The sky dome along a view ray: the air itself (sky-view LUT per light, plus airglow), and what
-// lies beyond it (sun, moon, stars) seen through the atmosphere's transmittance, which reddens
+// lies beyond it (sun, moon, Milky Way) seen through the atmosphere's transmittance, which reddens
 // them near the horizon and hides them below it.
 
 const SUN_ANGULAR_RADIUS = 0.0061; // ≈ 0.35°, slightly amplified
@@ -20,17 +20,11 @@ const EARTHSHINE = 0.004;
 const MOON_HALO = 0.03;
 const MOON_HALO_WIDTH = 0.03; // radians
 
-// Stars live in cells of a 3D grid in celestial coordinates, at most one per cell, kept only
-// if it lands inside the cell's central region (see `stars`).
-const STAR_CELLS = 80.0;
-const STAR_MARGIN = 0.25;
-// Flux of the faintest star; the rest follow N(>F) ∝ F^(−1.5), up to STAR_RANGE × brighter.
-const STAR_FLUX = 1e-8;
-const STAR_RANGE = 400.0;
-const TWINKLE = 0.35;
+@group(0) @binding(10) var milkyWayMap: texture_2d<f32>; // equatorial, equirectangular
+@group(0) @binding(11) var milkyWaySampler: sampler; // wraps around in right ascension
 
-// Angular size of one scene pixel: stars and disk edges are sized against it so they neither
-// alias nor shimmer as the camera breathes.
+// Angular size of one scene pixel: disk edges are sized against it so they neither alias nor
+// shimmer as the camera breathes.
 fn pixelAngle() -> f32 {
   return 2.0 * u.tanHalfFov.y / u.resolution.y;
 }
@@ -54,17 +48,6 @@ fn sun(dir: vec3f) -> vec3f {
   let disk = SUN_DISK_RADIANCE * limb * diskCoverage(angle, SUN_ANGULAR_RADIUS);
   let aureole = SUN_AUREOLE * exp(-angle / SUN_AUREOLE_WIDTH);
   return u.sunIlluminance * (disk + aureole);
-}
-
-fn valueNoise(p: vec3f) -> f32 {
-  let cell = bitcast<vec3u>(vec3i(floor(p)));
-  let f = fract(p);
-  let w = f * f * (3.0 - 2.0 * f);
-  let x00 = mix(hash3(cell), hash3(cell + vec3u(1u, 0u, 0u)), w.x);
-  let x10 = mix(hash3(cell + vec3u(0u, 1u, 0u)), hash3(cell + vec3u(1u, 1u, 0u)), w.x);
-  let x01 = mix(hash3(cell + vec3u(0u, 0u, 1u)), hash3(cell + vec3u(1u, 0u, 1u)), w.x);
-  let x11 = mix(hash3(cell + vec3u(0u, 1u, 1u)), hash3(cell + vec3u(1u, 1u, 1u)), w.x);
-  return mix(mix(x00, x10, w.y), mix(x01, x11, w.y), w.z);
 }
 
 // Maria: darker basalt plains, from noise over the moon's surface in a frame fixed to the moon
@@ -96,41 +79,20 @@ fn moon(dir: vec3f) -> vec4f {
   return vec4f(surface * coverage + halo, coverage);
 }
 
-// Stars: at most one per cell of a 3D grid in celestial coordinates (they turn with the Earth).
-// A star is kept only if it lands well inside its own cell, so no neighbour ever needs checking.
-// Each is a Gaussian at least a pixel wide carrying a fixed flux, so it never aliases; bright
-// stars spread a little wider, as they do on film.
-fn stars(dir: vec3f) -> vec3f {
-  let rotation = mat3x3f(u.skyRotation[0].xyz, u.skyRotation[1].xyz, u.skyRotation[2].xyz);
-  let celestial = transpose(rotation) * dir;
-  let cellCorner = floor(celestial * STAR_CELLS);
-  let cell = bitcast<vec3u>(vec3i(cellCorner));
-  // Independent random numbers per cell: offsets along z by a prime far beyond the grid.
-  let stream = vec3u(0u, 0u, 7919u);
-  let jitter = vec3f(hash3(cell), hash3(cell + stream), hash3(cell + 2u * stream));
-  let star = normalize(cellCorner + jitter);
-  let inCell = star * STAR_CELLS - cellCorner;
-  if (any(inCell < vec3f(STAR_MARGIN)) || any(inCell > vec3f(1.0 - STAR_MARGIN))) {
-    return vec3f(0.0);
-  }
-
-  let brightness = min(pow(hash3(cell + 3u * stream) + 1e-6, -1.0 / 1.5), STAR_RANGE);
-  let warmth = hash3(cell + 4u * stream);
-  let color = mix(vec3f(0.78, 0.87, 1.18), vec3f(1.12, 0.94, 0.78), warmth * warmth * warmth);
-  // Scintillation grows with the air mass the starlight crosses.
-  let phase = hash3(cell + 5u * stream) * TAU;
-  let scintillation = TWINKLE * min(1.0 / max(dir.y, 0.05), 3.0) / 3.0;
-  let twinkle = 1.0 + scintillation * sin(u.time * (5.0 + 4.0 * warmth) + phase) * sin(u.time * 1.7 + 2.0 * phase);
-
-  let sigma = 0.55 * pixelAngle() * min(pow(brightness, 0.15), 2.0);
-  let angle = angleBetween(celestial, star);
-  let spread = exp(-0.5 * angle * angle / (sigma * sigma)) / (TAU * sigma * sigma);
-  return color * STAR_FLUX * brightness * twinkle * spread;
+// The Milky Way's radiance along view ray `dir`, from the map made once by `milkyway.wgsl`.
+fn milkyWay(dir: vec3f) -> vec3f {
+  let equatorial = toEquatorial(dir);
+  let uv = vec2f(atan2(equatorial.y, equatorial.x) / TAU, 0.5 - asin(clamp(equatorial.z, -1.0, 1.0)) / PI);
+  return textureSampleLevel(milkyWayMap, milkyWaySampler, uv, 0.0).rgb;
 }
 
-fn skyRadiance(dir: vec3f) -> vec3f {
+// The sky along a view ray: rgb its radiance, a how much of what lies beyond the moon shows
+// through its disk. The stars are drawn later, at the display's own resolution, by `post`; the
+// scene hands them this, times the clouds' transmittance, as each pixel's view to space.
+fn skyRadiance(dir: vec3f) -> vec4f {
+  let air = skyViewRadiance(dir);
   let throughAir = transmittance(observerRadius(), dir.y);
   let lunar = moon(dir);
-  let beyond = sun(dir) + lunar.rgb + stars(dir) * (1.0 - lunar.a);
-  return skyViewRadiance(dir) + throughAir * beyond;
+  let beyond = sun(dir) + lunar.rgb + milkyWay(dir) * (1.0 - lunar.a);
+  return vec4f(air + throughAir * beyond, 1.0 - lunar.a);
 }
