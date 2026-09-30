@@ -1,7 +1,7 @@
 /**
  * The HDR scene: the sky dome along every pixel's view ray, less what the clouds' shadows take
  * from the air (the light-shaft layer), behind the clouds reconstructed from the sparse cloud
- * layer and averaged over frames (temporal accumulation). Writes linear radiance, exposed and
+ * layer and averaged over frames (temporal accumulation), all seen through the fog. Writes linear radiance, exposed and
  * tonemapped later by `post`, with each pixel's view to space for the stars `post` draws, and
  * the averaged clouds, which become the next frame's history.
  */
@@ -10,6 +10,7 @@ import atmosphere from '../shaders/atmosphere.wgsl'
 import camera from '../shaders/camera.wgsl'
 import celestial from '../shaders/celestial.wgsl'
 import common from '../shaders/common.wgsl'
+import fog from '../shaders/fog.wgsl'
 import scene from '../shaders/scene.wgsl'
 import sky from '../shaders/sky.wgsl'
 import temporal from '../shaders/temporal.wgsl'
@@ -31,7 +32,7 @@ export interface SceneInputs {
 }
 
 export async function createScenePass({ device, uniforms }: PassContext, { milkyWay, ...luts }: SceneInputs): Promise<Pass> {
-  const module = shader(device, 'scene', [uniformsWgsl, common, atmosphere, camera, celestial, valueNoise, sky, temporal, scene])
+  const module = shader(device, 'scene', [uniformsWgsl, common, atmosphere, camera, celestial, valueNoise, sky, fog, temporal, scene])
   const pipeline = await createFullscreenPipeline(device, 'scene', module, sceneFormat, cloudFormat)
   const fixedEntries = [...lutEntries(device, luts), ...milkyWayEntries(device, milkyWay)]
   const sampler = device.createSampler({ label: 'clouds', magFilter: 'linear', minFilter: 'linear' })

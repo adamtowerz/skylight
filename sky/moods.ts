@@ -5,7 +5,6 @@
  * sunsets look alike.
  */
 
-import { altocumulusPresence } from './altocumulus'
 import { naturalSeconds } from './clock'
 import { lerp, multiply, scale, smoothstep, type Vec2, type Vec3 } from './math'
 import type { UniformValues } from './uniforms'
@@ -73,7 +72,7 @@ export interface Mood {
    */
   cloudTowers: number
   /**
-   * How much of the sky the altocumulus fills when the weather brings it (`altocumulus.ts`): a
+   * How much of the sky the altocumulus fills when the weather brings it (`weather.ts`): a
    * mackerel sky of small cloudlets in rows at 5 km, which keeps the sun after the heaps below have
    * lost it and glows across the whole afterglow.
    */
@@ -231,20 +230,28 @@ export function moodUniforms(mood: Mood): Partial<UniformValues> {
  */
 const wind: Vec2 = [0.03, -0.012]
 const evolutionPerSecond = 0.0025
+/**
+ * The light breeze at the ground (radiation fog forms only in near-calm air): it carries the fog's
+ * wisps overhead far slower than the wind aloft (km per second), and they thin and thicken more
+ * slowly still (noise cells per second).
+ */
+const breeze: Vec2 = [0.004, 0.0015]
+const fogChurnPerSecond = 0.006
 
 /** How far the wind has carried the clouds after `seconds` of natural time, km. */
 export const windOffset = (seconds: number): Vec2 => [wind[0] * seconds, wind[1] * seconds]
 
 /**
- * Cloud motion, and whether there is altocumulus, as a pure function of simulated time, so
- * scrubbing the clock scrubs the clouds too and a given `?hour=` always shows the same sky. The
- * motion runs on the clock's natural seconds, so the drift looks equally calm at noon and at sunset.
+ * Cloud and fog motion as a pure function of simulated time, so scrubbing the clock scrubs the
+ * clouds too and a given `?hour=` always shows the same sky. The motion runs on the clock's
+ * natural seconds, so the drift looks equally calm at noon and at sunset.
  */
-export function weather(hours: number): Partial<UniformValues> {
+export function drift(hours: number): Partial<UniformValues> {
   const seconds = naturalSeconds(hours)
   return {
     cloudWind: windOffset(seconds),
     cloudEvolution: evolutionPerSecond * seconds,
-    altocumulusPresence: altocumulusPresence(hours),
+    fogWind: [breeze[0] * seconds, breeze[1] * seconds],
+    fogChurn: fogChurnPerSecond * seconds,
   }
 }

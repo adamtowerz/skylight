@@ -17,6 +17,7 @@ import { moodCycle } from './moods'
 import { createRenderer, type Renderer } from './renderer'
 import { openingMoment } from './seeds'
 import { fillUniforms, Uniforms } from './uniforms'
+import { weatherAt } from './weather'
 
 /** How long the eyes take to open once the first frame is ready. */
 const revealSeconds = 3.5
@@ -98,6 +99,7 @@ function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onL
       reveal: smoothstep(0, revealSeconds, time - revealStart),
       blankColor,
       hours: clock.hours,
+      weather: { ...weatherAt(clock.hours), ...params.weather },
       camera: view,
       history: history.next(view, clock.hours),
       sky,

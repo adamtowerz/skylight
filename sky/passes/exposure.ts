@@ -1,12 +1,14 @@
 /**
- * Exposure lives on the GPU: a compute pass meters the sky-view LUT across the camera's view and
- * writes `{ value: f32 }` to a storage buffer that `post` reads, so auto-exposure never
- * round-trips through the CPU.
+ * Exposure lives on the GPU: a compute pass meters the sky-view LUT, seen through the fog, across
+ * the camera's view and writes `{ value: f32 }` to a storage buffer that `post` reads, so
+ * auto-exposure never round-trips through the CPU.
  */
 
 import atmosphere from '../shaders/atmosphere.wgsl'
 import common from '../shaders/common.wgsl'
 import exposure from '../shaders/exposure.wgsl'
+import fog from '../shaders/fog.wgsl'
+import valueNoise from '../shaders/valuenoise.wgsl'
 import { shader } from '../shader'
 import { uniformsWgsl } from '../uniforms'
 import { lutEntries, outputBinding } from './atmosphere'
@@ -17,16 +19,17 @@ import { uniformsEntry, type Pass, type PassContext } from './pass'
 export const exposureBufferSize = 16
 
 export interface ExposureInputs {
+  transmittance: GPUTextureView
   skyView: GPUTextureView
 }
 
-export function createExposurePass(context: PassContext, { skyView }: ExposureInputs, output: GPUBuffer): Promise<Pass> {
+export function createExposurePass(context: PassContext, luts: ExposureInputs, output: GPUBuffer): Promise<Pass> {
   return createComputePass(context, {
     label: 'exposure',
-    module: shader(context.device, 'exposure', [uniformsWgsl, common, atmosphere, exposure]),
+    module: shader(context.device, 'exposure', [uniformsWgsl, common, atmosphere, valueNoise, fog, exposure]),
     entries: [
       uniformsEntry(context.uniforms),
-      ...lutEntries(context.device, { skyView }),
+      ...lutEntries(context.device, luts),
       { binding: outputBinding, resource: { buffer: output } },
     ],
     workgroups: [1],

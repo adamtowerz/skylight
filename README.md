@@ -48,12 +48,12 @@ post              scene target, exposure, seen stars    swap chain
 | `transmittance`   | `rgba16float` 256×64            | transmittance to space per (r, μ) (Hillaire 2020, Bruneton's mapping)   |
 | `multiscattering` | `rgba16float` 32×32             | ψ_ms: every scattering order past the first, 64 directions per texel    |
 | `skyview`         | `rgba16float` 192×108, 2 layers | atmosphere radiance around the observer, lit by the sun / by the moon   |
-| `exposure`        | storage buffer `{ value: f32 }` | meters the sky-view LUT over the view; compressed key; adapts over time |
+| `exposure`        | storage buffer `{ value: f32 }` | meters the sky-view LUT through the fog over the view; compressed key; adapts |
 | `cloud shadow`    | `rgba16float` 256×256           | Beer shadow map of the cumulus along the key light (Hillaire 2016)      |
 | `light shafts`    | `rgba16float`, ¼ of the scene   | beams of sunlight through the gaps between the heaps, and lit share     |
 | `shaft mean`      | `rgba16float`, 1 per 128 px     | the lit share averaged over wide blocks, so shafts add only contrast    |
 | `cloud layer`     | `rgba16float`, ¼ of the scene   | one ray per 2 × 2 cell → cumulus, altocumulus, cirrus (radiance, T)     |
-| `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, Milky Way |
+| `scene`           | `rgba16float` scene + history   | clouds rebuilt + averaged over frames, over the sky, sun, moon, Milky Way; fog |
 | `stars`           | storage buffer, 1 per star      | each star's place, colour, twinkle and light through the air and clouds |
 | `post`            | swap chain                      | upsample, stars, exposure, vignette, AgX, grade, paper, grain, dither, reveal |
 
@@ -98,7 +98,7 @@ both dimmed with depth into the heap. At night the moon lights them, and they st
 airglow with silver rims.
 
 **Mackerel sky.** Now and then a layer of altocumulus a few hundred metres deep lies between
-them at 5 km. Mid-level moisture comes and goes with the weather (`sky/altocumulus.ts`): each
+them at 5 km. Mid-level moisture comes and goes with the weather (`sky/weather.ts`): each
 13-hour spell draws its own, thinnest near midday, so most skies have none, some a patch, and
 occasionally one has a whole mackerel sky, filling as much of it as the mood allows
 (`altocumulusCoverage`; `altocumulusSheet` merges it into a flatter altostratus). Wind shear rolls
@@ -133,6 +133,38 @@ strays from its mean over wide blocks of the view (the `shaft mean` pass). Lit l
 shaded ones darken a little (keeping their hue, never by more than 30 %), and the sky around them
 keeps its glow. The contrast is amplified per mood (`shafts` in `moods.ts`, scaled against each
 mood's haze), meets the sky with a film-like shoulder, and fades out as the sun climbs past 30°.
+
+**Weather.** Moods are each twilight's flavour; weather comes and goes on top of them, as a pure
+function of simulated time (`sky/weather.ts`), so a given `?hour=` always shows the same sky. Each
+kind of weather arrives in spells: every spell draws a random amount (a hash of its index, with a
+salt per kind, so the kinds are independent), eased into the next, and the kind shows once the
+draw passes a threshold, so most spells bring none, some a little and a few the whole thing. The
+hour of day then shapes it after the physics that makes it. The mackerel sky is one kind, thinnest
+at midday. *Radiation fog* forms on still, humid nights as the ground cools, thickens from 23:00 to
+04:00, is thickest around sunrise and burns off between 06:30 and 09:30: misty sunrises, about one morning
+in three. *Haze* builds through warm afternoons, lasts through the golden hour and settles out in
+the night; it multiplies the mood's aerosols (and lifts them a little higher), so the Hillaire
+atmosphere does the rest: a whiter sky, a softer sun, redder and dimmer heaps, stronger light
+shafts. The salts are chosen so the opening seeds keep their skies.
+
+Fog is a layer of droplets on the ground with the eye inside it (`fog.wgsl`): 60–200 m of it
+above the eye, visibility down to 100 m. It is thin and nearly uniform, and droplets far larger than
+the light's wavelengths scatter every colour alike, so it needs no march: it is a plane-parallel
+slab of grey, conservative scatterers, solved in closed form per pixel. Everything beyond it (sky,
+shafts, clouds, sun, moon, and through the scene's alpha the stars) is dimmed by exp(−τ/μ), so thin
+fog still shows blue straight up and hides it at a slant. The light it takes away comes out below
+as a glow: how much of the sunlight on its top gets through is the two-stream (Eddington) solution
+for a conservative slab, and where it seems to come from broadens with every scattering (the
+droplets' forward phase, g ≈ 0.85, raised to the number of scatterings), so a thin mist glows
+around the sun and a thick bank is evenly luminous. Half of what a droplet takes out of a beam
+it only diffracts, a few degrees forward, and that light is the sun's soft white disc and its
+aureole. The sky lights the fog from all around, and moonlight does what sunlight does, so at night
+the moon hangs in a pale halo while the stars fade. Fog lies in banks about a kilometre across, so a
+low sun slants in through their tops and sides: at sunrise the fog glows peach and gold, at sunset
+rose. Its top is ragged, its thickness breathing with slow noise carried by the breeze at the ground,
+so thin fog opens into patches of blue. Exposure meters the fogged sky, and like a photographer
+exposing for fog or snow it opens up by up to 0.8 stop as the fog veils the view, so fog reads as
+luminous rather than grey. When there is no fog none of this is computed.
 
 **Stars.** The stars are the real sky's: the Yale Bright Star Catalogue down to magnitude 5.5,
 2,887 stars packed into 17 KB (`sky/brightstars.ts`, generated by `scripts/stars.mjs`; the
@@ -182,6 +214,7 @@ so scrubbing the clock scrubs the clouds.
 | `?seed=3`      | start at one of the opening moments in `sky/seeds.ts`    |
 | `?speed=0`     | time multiplier; 0 freezes the clock                     |
 | `?mood=2`      | which mood the first twilight shows                      |
+| `?fog=0.6`     | hold a kind of weather (`fog`, `haze`, `altocumulus`) at a value 0–1 |
 
 Moods, in order: `goldenHaze`, `violetDusk`, `emberSky`, `clear`, `softOvercast`. The sun sets at
 18:52; golden hour is about 18.0–18.8, the pink and violet afterglow 18.9–19.4.

@@ -66,6 +66,14 @@ Moods (`?mood=n`, `sky/moods.ts`): 0 `goldenHaze`, 1 `violetDusk`, 2 `emberSky`,
 around noon and midnight, so at 13 or 23 `?mood=n` is partly blended with its neighbour. For a
 twilight change, sweep `--hours 18.6,18.8,18.9,19.0,19.2,19.4,19.6 --moods 0,1,2,3,4`.
 
+Weather (`sky/weather.ts`) follows its own timeline, and day 0 (plain `?hour=`) is fair at every
+hour in the matrix, so baselines stay comparable. To render a weather state, hold it over the
+timeline: `--params 'fog=0.6'` (also `haze`, `altocumulus`, each 0–1; any future kind works the
+same way). File names don't include params, so give each weather level its own `--out`. Fog is
+worth seeing at 5.5 (misty sunrise), 7, 13 (soft sun disc), 18.3, 18.8 and 23 (moon halo, stars
+fading) at 0.3 / 0.6 / 1; haze at 13 and 18.3. Weather changes must leave the opening seeds
+(`sky/seeds.ts`, render each as `--hours <hours> --moods <mood>`) at the noise floor.
+
 ## 4. Look, then compare
 
 Open every PNG with Read. Then build sheets (use `.jpg` output: multi-MB PNG sheets get

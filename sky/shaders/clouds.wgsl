@@ -38,11 +38,6 @@ fn bend(position: vec2f, tile: f32, slice: f32) -> vec2f {
   return vec2f(a, b) - 0.5;
 }
 
-fn henyeyGreenstein(cosTheta: f32, g: f32) -> f32 {
-  let g2 = g * g;
-  return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5));
-}
-
 // The sky at 30° elevation, at horizontal heading `heading` (unit, xz).
 fn skyRing(heading: vec2f) -> vec3f {
   return skyViewRadiance(vec3f(0.866 * heading.x, 0.5, 0.866 * heading.y));

@@ -8,8 +8,9 @@ import type { Celestial } from './celestial'
 import type { History } from './history'
 import { cloudSchedule } from './interleave'
 import type { Vec2, Vec3 } from './math'
-import { moodUniforms, weather, type Mood } from './moods'
+import { drift, moodUniforms, type Mood } from './moods'
 import { struct, type Schema, type StructValues, type StructWriter } from './struct'
+import { hazy, weatherUniforms, type Weather } from './weather'
 
 const schema = {
   // Frame
@@ -72,6 +73,12 @@ const schema = {
   cloudPhase: 'vec2f', // the pixel of every cell marched this frame
   cloudJitter: 'f32', // this frame's offset of the cloud march's blue-noise jitter
 
+  // Fog (km, km⁻¹): a layer of droplets on the ground, the eye inside it
+  fogDepth: 'f32', // of fog above the eye, on average
+  fogExtinction: 'f32', // grey
+  fogWind: 'vec2f', // accumulated offset of its wisps
+  fogChurn: 'f32', // drift of its thickness through the noise's third axis
+
   // Post
   exposureBias: 'f32', // stops
   grain: 'f32',
@@ -107,8 +114,9 @@ export interface FrameState {
   frame: number
   reveal: number
   blankColor: Vec3
-  /** Simulated hours since day zero; drives the weather. */
+  /** Simulated hours since day zero; drives the drift of clouds and fog. */
   hours: number
+  weather: Weather
   camera: CameraBasis
   history: History
   sky: Celestial
@@ -116,6 +124,16 @@ export interface FrameState {
 }
 
 export function fillUniforms(writer: StructWriter<UniformSchema>, state: FrameState) {
-  const { camera, history, sky, mood, hours, frame, ...rest } = state
-  writer.set({ ...rest, ...camera, ...history, ...sky, ...moodUniforms(mood), ...weather(hours), ...cloudSchedule(frame), ...post })
+  const { camera, history, sky, mood, weather, hours, frame, ...rest } = state
+  writer.set({
+    ...rest,
+    ...camera,
+    ...history,
+    ...sky,
+    ...moodUniforms(hazy(mood, weather.haze)),
+    ...weatherUniforms(weather),
+    ...drift(hours),
+    ...cloudSchedule(frame),
+    ...post,
+  })
 }

@@ -6,7 +6,7 @@
 // per billow crest along the shear, each cell a soft dome of its own size; the rows bend with the
 // flow (domain warping, Quilez), their billows swell and fade in wave trains, and fine Worley
 // detail frays each cloudlet's rim and heaps it into tufts. Patches of moist air decide where the
-// field forms at all (as far as the weather brings it, `altocumulus.ts`), and clump into rafts
+// field forms at all (as far as the weather brings it, `weather.ts`), and clump into rafts
 // and bands: in their hearts cloudlets grow large and fuse into rolls, at their fringes they
 // shrink, scatter and go missing. Where the mood asks for it they merge into altostratus.
 //

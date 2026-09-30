@@ -1,8 +1,8 @@
 // Auto-exposure on the GPU, so it never round-trips through the CPU. One workgroup looks at
-// the sky through the camera's frustum (a 16 × 16 grid of sky-view LUT samples), takes the
-// log-average luminance, and exposes for it with a compressed key: exposure ∝ L^(−COMPRESSION)
-// rather than L⁻¹, so night stays darker than day and a sunset keeps its glow instead of being
-// normalised to grey. The result adapts smoothly over time, like an eye.
+// the sky through the camera's frustum (a 16 × 16 grid of sky-view LUT samples, seen through the
+// fog), takes the log-average luminance, and exposes for it with a compressed key: exposure ∝
+// L^(−COMPRESSION) rather than L⁻¹, so night stays darker than day and a sunset keeps its glow
+// instead of being normalised to grey. The result adapts smoothly over time, like an eye.
 
 @group(0) @binding(5) var<storage, read_write> exposure: Exposure;
 
@@ -14,24 +14,30 @@ const KEY = 0.17;
 const COMPRESSION = 0.68;
 // Adaptation rate, per second.
 const ADAPTATION = 1.5;
+// Fog, like snow, is a high-key scene that a meter would render grey: as a photographer exposing
+// for it would, open up by as many stops as it veils the view.
+const HIGH_KEY = 0.8;
 
-var<workgroup> logLuminance: array<f32, SAMPLES>;
+// Per sample: log2 of its luminance, and how far fog veils it.
+var<workgroup> metered: array<vec2f, SAMPLES>;
 
 @compute @workgroup_size(GRID, GRID)
 fn main(@builtin(local_invocation_id) id: vec3u, @builtin(local_invocation_index) index: u32) {
   let ndc = (vec2f(id.xy) + 0.5) / f32(GRID) * 2.0 - 1.0;
   let ray = u.cameraForward + ndc.x * u.tanHalfFov.x * u.cameraRight + ndc.y * u.tanHalfFov.y * u.cameraUp;
-  logLuminance[index] = log2(max(luminance(skyViewRadiance(normalize(ray))), 1e-8));
+  let dir = normalize(ray);
+  let fog = fogAlong(dir);
+  metered[index] = vec2f(log2(max(luminance(fog.rgb + fog.a * skyViewRadiance(dir)), 1e-8)), 1.0 - fog.a);
 
   for (var stride = SAMPLES / 2u; stride > 0u; stride >>= 1u) {
     workgroupBarrier();
     if (index < stride) {
-      logLuminance[index] += logLuminance[index + stride];
+      metered[index] += metered[index + stride];
     }
   }
   if (index == 0u) {
-    let average = logLuminance[0] / f32(SAMPLES);
-    let desired = log2(KEY) - COMPRESSION * average;
+    let average = metered[0] / f32(SAMPLES);
+    let desired = log2(KEY) - COMPRESSION * average.x + HIGH_KEY * average.y;
     // The buffer starts zeroed: take the first frame's exposure as is.
     let previous = exposure.value;
     let adapted = select(desired, mix(log2(previous), desired, 1.0 - exp(-ADAPTATION * u.dt)), previous > 0.0);

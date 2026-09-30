@@ -53,6 +53,12 @@ fn rayleighPhase(cosTheta: f32) -> f32 {
   return 3.0 / (16.0 * PI) * (1.0 + cosTheta * cosTheta);
 }
 
+// Henyey–Greenstein 1941: the phase function of a medium scattering with mean cosine g.
+fn henyeyGreenstein(cosTheta: f32, g: f32) -> f32 {
+  let g2 = g * g;
+  return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5));
+}
+
 // Cornette & Shanks 1992: Henyey–Greenstein with a (1 + cos²θ) factor, which keeps strongly
 // forward-scattering aerosols' back-scatter plausible.
 fn miePhase(cosTheta: f32) -> f32 {

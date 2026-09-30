@@ -11,8 +11,14 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
 ## Map
 
 - `sky/index.ts` `start(canvas)`: per frame the CPU advances `clock.ts`, places sun/moon
-  (`celestial.ts`) and camera (`camera.ts`), picks the mood (`moods.ts`) and whether the weather
-  brings altocumulus (`altocumulus.ts`), fills the uniforms and calls `renderer.render`.
+  (`celestial.ts`) and camera (`camera.ts`), picks the mood (`moods.ts`) and reads the weather
+  (`weather.ts`: altocumulus, fog, haze), fills the uniforms and calls `renderer.render`.
+- `sky/weather.ts` the weather timeline: a pure function of simulated hours. Each kind comes in
+  hashed spells (own length and salt), shaped by the hour of day: radiation fog in the small hours
+  to mid-morning, haze on warm afternoons, altocumulus thinnest at midday. Haze multiplies the
+  mood's aerosols (`hazy`); fog is a slab solved in closed form (`fog.wgsl`) that veils the scene
+  (and the stars, via scene alpha) and that the exposure meters. New kinds (deck, rain) go here;
+  salts must keep the seeds' skies.
 - `sky/renderer.ts` owns every shared GPU resource (uniform and exposure buffers, LUTs, noise
   volume, cloud shadow map, shaft and cloud layers, history pair, scene target) and encodes the
   frame graph in order:
@@ -21,8 +27,8 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   sunlight through the gaps, one pixel per 2 × 2 cell) → shaft mean (their average lit share) →
   cloud layer (one pixel per 2 × 2 cell, `interleave.ts`; cumulus heaps in front of an
   altocumulus "mackerel sky" at 5 km, `altocumulus.wgsl`, in front of the cirrus) → scene (sky plus lane contrast, clouds
-  rebuilt and averaged over frames, Milky Way from a map drawn once at init; alpha = view to space
-  past moon and clouds) → stars (every star seen once per frame into a buffer, `seestar.wgsl`) →
+  rebuilt and averaged over frames, Milky Way from a map drawn once at init, all through the fog;
+  alpha = view to space past moon, clouds and fog) → stars (every star seen once per frame into a buffer, `seestar.wgsl`) →
   post (stars spread over the display's own pixels, `starfield.wgsl`/`starlight.wgsl`, then
   tonemap/grade → swap chain).
 - `sky/passes/*.ts` one per pass: pipeline + bind groups only. `sky/shaders/*.wgsl` the shaders.
@@ -47,7 +53,8 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
 ## Controls
 
 `?hour=18.8` start hour (without it, a random opening moment from `sky/seeds.ts`; `?seed=n`
-picks one) · `?speed=0` freeze the clock · `?mood=0..4` (goldenHaze, violetDusk, emberSky,
+picks one) · `?fog=0.8&haze=0.5&altocumulus=1` hold any kind of weather at a value (0..1) over
+the timeline · `?speed=0` freeze the clock · `?mood=0..4` (goldenHaze, violetDusk, emberSky,
 clear, softOvercast) · scroll/drag scrubs time · ←/→ ±15 min · space pause. Sunset is
 18:52; golden hour ≈ 18.0–18.8; afterglow 18.9–19.4; blue hour 19.3–19.8.
 

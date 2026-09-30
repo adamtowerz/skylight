@@ -124,7 +124,7 @@ export async function createRenderer({ device, context, format }: Gpu, onEdgeCol
     createTransmittancePass(shared, transmittance),
     createMultiscatteringPass(shared, { transmittance }, multiscattering),
     createSkyViewPass(shared, { transmittance, multiscattering }, skyView),
-    createExposurePass(shared, { skyView }, exposure),
+    createExposurePass(shared, { transmittance, skyView }, exposure),
     createShadowMapPass(shared, { cloudNoise }, cloudShadow),
     createShaftPass(shared, { transmittance, cloudShadow, blueNoise: jitterMask }),
     createShaftMeanPass(shared),

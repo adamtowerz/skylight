@@ -4,8 +4,9 @@
 // (shafts.wgsl) join the sky between the clouds, upsampled from the shaft layer: each ray's beam
 // times how far its lit share strays from the average around it, so lit lanes brighten, shaded
 // ones darken a little, and the sky around them keeps its glow. The averaged clouds go out as well, to become next
-// frame's history. The stars are not drawn here but by `post`, at the display's resolution: the
-// scene's alpha tells it how much of the sky beyond each pixel shows past the moon and clouds.
+// frame's history. The fog the eye lies in veils the lot. The stars are not drawn here but by
+// `post`, at the display's resolution: the scene's alpha tells it how much of the sky beyond each
+// pixel shows past the moon, the clouds and the fog.
 
 @group(0) @binding(8) var shaftLayer: texture_2d<f32>; // one texel per cell, like the cloud layer
 @group(0) @binding(9) var shaftMean: texture_2d<f32>; // the average lit share, per block
@@ -48,6 +49,8 @@ fn main(@builtin(position) position: vec4f) -> Scene {
   let light = beams.rgb * max(lit, 0.0);
   let shade = min(SHADE * luminance(beams.rgb) * max(-lit, 0.0) / brightness, LANE_DEPTH);
   let sky = air * (1.0 - shade) + light / (1.0 + luminance(light) / brightness);
-  // Alpha: the view to space past the moon and the clouds, for the stars `post` draws.
-  return Scene(vec4f(sky * clouds.a + clouds.rgb, dome.a * clouds.a), clouds);
+  // All of it seen through the fog the eye lies in (fog.wgsl). Alpha: the view to space past the
+  // moon, the clouds and the fog, for the stars `post` draws.
+  let fog = fogAlong(dir);
+  return Scene(vec4f(fog.rgb + fog.a * (sky * clouds.a + clouds.rgb), dome.a * clouds.a * fog.a), clouds);
 }
