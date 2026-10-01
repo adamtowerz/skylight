@@ -82,8 +82,8 @@ flat; broad Worley turrets swell the flanks and tops into one merged body, and f
 detail frays the edges, wispy below and billowy above, both held close to the heaps' own
 bodies so that they lobe coherent heaps rather than scatter flecks. Each lookup (the view ray's pixel
 cells, the light march's lengthening steps, the shadow map's long ones) resolves only the features
-its sample can, so none alias into sparkle as the heaps drift. Density rises from a crisp,
-translucent rim into a core as dense as real cumulus, so heaps keep soft volume yet darken their
+its sample can, so none alias into sparkle as the heaps drift. Density rises from a soft,
+translucent rim a few hundred metres deep into a core as dense as real cumulus, so heaps keep soft volume yet darken their
 own bases and crevices. A heap turns opaque within far less than a step of
 the view ray, so between two samples the march takes the field to run linearly and integrates the
 cloud's sharp threshold along the step exactly, and lights each step where the light it sends to
@@ -91,10 +91,17 @@ the eye comes from on average (near the front of a thick step): heap edges move 
 the steps instead of falling into contour lines, at no extra samples. Sunlight reaches every sample through the transmittance LUT, so after the sun sets at
 the ground the clouds keep catching it, gold, then rose, then the altocumulus and cirrus alone glow pink. Direct
 light uses a short light march, a dual-lobe phase function (the silver lining) and
-multiple-scattering octaves after Wrenninge et al. 2013, which reach deeper under a grazing sun so
-sunset heaps glow through. Ambient light is the sky-view LUT, with shaded sides seeing only the half
-of the sky turned from the sun (blue shadows at noon, violet at dusk), and grass bounce from below,
-both dimmed with depth into the heap. At night the moon lights them, and they stand dark against the
+multiple-scattering octaves after Wrenninge et al. 2013. Light scattered many times comes in by
+whichever way brings more: along the light, or diffused down from the sunlit crown through the
+column above the sample (a second, three-step march), carried by two-stream diffusion (Bohren 1987)
+and weighted by how much of the light the crown catches, which under a grazing sun is little.
+Diffused light also reaches less far sideways than down, leaking out through the flat base it runs
+along. So at golden hour the flanks and turrets facing the sun blaze while the bases of thick
+heaps sink into their own shade, darker under the deep cores, lighter under thin edges: the heaps
+have form instead of one even glow. Ambient light is the sky-view LUT, with shaded sides seeing
+only the half of the sky turned from the sun (blue shadows at noon, violet at dusk), and grass
+bounce from below, both dimmed by the cloud they diffuse through, the skylight from above by the
+column the second march measures. At night the moon lights them, and they stand dark against the
 airglow with silver rims.
 
 **Mackerel sky.** Now and then a layer of altocumulus a few hundred metres deep lies between

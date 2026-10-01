@@ -10,9 +10,11 @@
 // Every lookup resolves only the features its sample can, so nothing aliases into sparkle as the
 // heaps drift. Density rises from a soft, translucent rim into a core as dense as real cumulus, so
 // heaps have soft volume yet shade their own bases and crevices. Each step is lit by a short march
-// toward the key light, with multiple scattering after Wrenninge et al. 2013 that reaches deeper
-// under a grazing sun (sunset heaps glow through), and by skylight and grass light that fade with
-// depth into the heap: shaded sides turn sky-blue, and thick cores go dark enough to stand out
+// toward the key light and one up through the column above it, with multiple scattering after
+// Wrenninge et al. 2013 that comes in along whichever way brings more: along the light, or diffused
+// down from the sunlit crown (Bohren 1987). So under a low sun the flanks facing it blaze and the
+// bases beneath thick heaps sink into their own shade, and skylight and grass light fade with
+// depth into the heap too: shaded sides turn sky-blue, and thick cores go dark enough to stand out
 // against the night.
 
 // Horizontal extent of one tile of the noise volume, km: the heaps, their detail, the weather.
@@ -24,13 +26,13 @@ const WEATHER_TILE = 34.0;
 // billows instead of the same smooth dome.
 const HEAPS_RANGE = vec2f(0.1, 0.7);
 const MAX_HEAPS = 1.5; // the stretched range's top, (1 − 0.1) / (0.7 − 0.1)
-// Density past the threshold of cloud, in units of the heaps field: it rises quickly to a
-// translucent rim at BOUNDARY, a crisp silhouette for the detail to carve, then gradually to the
-// core at CORE. Real cumulus thicken inward like this, which gives each heap soft volume, light
+// Density past the threshold of cloud, in units of the heaps field: it rises to a translucent rim
+// at BOUNDARY, a few hundred metres in, so that outlines thin out rather than end in a cut, then
+// gradually to the core at CORE. Real cumulus thicken inward like this, which gives each heap soft volume, light
 // fading into shadow across it, rather than the flat face of a uniformly dense one.
-const BOUNDARY = 0.08;
+const BOUNDARY = 0.16;
 const CORE = 0.35;
-const RIM = 0.4; // share of the core's density the rim reaches
+const RIM = 0.3; // share of the core's density the rim reaches
 // How far the heaps field typically changes per km across a heap's edge, in its own units.
 const FIELD_CHANGE = 0.2;
 // Density at the base relative to the body: droplets are still small where condensation begins.
@@ -96,20 +98,28 @@ const BACKWARD_WEIGHT = 0.3;
 const OCTAVES = 4u;
 const OCTAVE_ENERGY = 0.6;
 const OCTAVE_SPREAD = 0.5;
-// The reach under a high light keeps daylit cores from flooding with sunlight. Light diffused many
-// times takes the shortest way in rather than the light's, and under a grazing sun that is down
-// through the lit tops, not across kilometres of heap: there the deep octaves reach further, and
-// the whole body of a sunset cloud glows. The key light is grazing below GRAZING.x and high above
-// GRAZING.y (sines of ≈ 3° and 30°).
+// The reach under a high light keeps daylit cores from flooding with sunlight. Under a grazing one
+// the light runs in sideways, just above the flat base, through which diffused light keeps leaking
+// out (diffusion in a slab dies away sideways over about its thickness), so it reaches less far
+// into a heap than down through the column below a high sun: low on a heap, only the flanks facing
+// the light glow, and the base beyond them sinks into its own shade. The key light is grazing
+// below GRAZING.x and high above GRAZING.y (sines of ≈ 3° and 30°).
 const OCTAVE_REACH = 0.35;
-const GRAZING_OCTAVE_REACH = 0.21;
+const GRAZING_OCTAVE_REACH = 0.5;
 const GRAZING = vec2f(0.05, 0.5);
+// The light a heap's crown catches per area of the column below it: all of a light overhead, but
+// of a grazing one only what falls on the crown's sunward slopes (the flanks' share comes in along
+// the light instead). So under a low sun the bases, lit only through the crowns, sink into their
+// own shade while the flanks facing the sun blaze.
+const GRAZING_CROWN = 0.15;
 // Beer–powder (Schneider 2015): light must scatter in a while before it can come back out, so
 // sun-facing edges seen from the shadowed side are darker than Beer's law alone says.
 const POWDER = 0.6;
-// Share of the ambient that is skylight slipping in through the cloud's nearby sides, which no
-// depth into the heap hides. It is what tints shaded sides and bases blue in daylight.
+// Share of the ambient that is skylight slipping in through the cloud's nearby sides. It is what
+// tints shaded sides and bases blue in daylight, and it reaches only as far in as the shortest way
+// out, toward the light or up through the column: edges take all of it, a broad heap's core little.
 const SIDE_SKYLIGHT = 0.5;
+const OPEN_SIDES = 0.3; // the share of it that even a core sees, through the heap's ragged sides
 // Optical depth toward the key light over which a sample passes from the lit side of the cloud,
 // which sees the whole sky, to the shaded side, which sees only the half turned from the light.
 const SHADE_DEPTH = 8.0;
@@ -285,14 +295,36 @@ fn opticalDepthToLight(p: vec3f, toLight: vec3f, weather: Weather, jitter: f32) 
   return depth * EXTINCTION * u.cloudDensity;
 }
 
-// How much diffuse light reaches a sample through the cloud around it, from above (x: the sky) and
-// from below (y: the grass). Two-stream diffuse transmission, 1 / (1 + ¾(1 − g)τ) (Bohren 1987),
-// with τ estimated from the sample's own extinction and its depth below the dome's top or above
-// the base: edges, where density is still rising, see nearly all of it; a thick heap's core very
-// little, which is what lets clouds read darker than the sky behind them.
-fn ambientReach(h: f32, top: f32, extinction: f32) -> vec2f {
-  let diffusion = 0.75 * (1.0 - FORWARD) * extinction * (u.cloudTop - u.cloudBottom);
-  return 1.0 / (1.0 + diffusion * vec2f(max(top - h, 0.0), h));
+// Optical depth of the column above a sample, up to its heap's top: the way skylight comes down
+// into it, and, under a grazing light, the way light diffused through the sunlit crown comes down
+// to the base. It is read from the heap's own field rather than marched: how far past the
+// threshold the field lies at the sample (`field`, at height fraction `h`) says how strong the
+// heap is there, and so, through the dome's profile, how high it reaches above, and how dense the
+// column is on the way (Simpson's rule, with the density gone at the top). At a heap's thin edges
+// the column is short and faint; under its strong cores, tall and dense.
+fn opticalDepthAbove(h: f32, field: f32, weather: Weather) -> f32 {
+  let threshold = 1.0 - weather.cover;
+  let heaps = (max(field, 0.0) + threshold) / max(heightProfile(h, weather.top, weather.spread), 1e-3);
+  let open = saturate(1.0 - threshold / max(heaps, 1e-4));
+  let top = weather.top * mix(pow(open, 1.0 / 3.0), pow(open, 1.0 / SPREAD_DOME), weather.spread);
+  let height = max(top - h, 0.0);
+  let middle = h + 0.5 * height;
+  let middleField = heaps * heightProfile(middle, weather.top, weather.spread) - threshold;
+  let density = (fill(field, 0.0) + 4.0 * fill(middleField, 0.0)) / 6.0;
+  return density * weather.density * height * (u.cloudTop - u.cloudBottom) * EXTINCTION * u.cloudDensity;
+}
+
+// How much diffuse light reaches a sample through the cloud around it, from above (x: the sky,
+// through the column `above`) and from below (y: the grass, through its height over the base at
+// the sample's own `extinction`). Two-stream diffuse transmission, 1 / (1 + ¾(1 − g)τ) (Bohren
+// 1987): edges see nearly all of it, a thick heap's core very little, which is what lets clouds
+// read darker than the sky behind them.
+fn ambientReach(h: f32, above: f32, extinction: f32) -> vec2f {
+  return diffuseTransmission(vec2f(above, extinction * h * (u.cloudTop - u.cloudBottom)));
+}
+
+fn diffuseTransmission(opticalDepth: vec2f) -> vec2f {
+  return 1.0 / (1.0 + 0.75 * (1.0 - FORWARD) * opticalDepth);
 }
 
 // How much deeper each multiple-scattering octave reaches under the key light `light`.
@@ -325,6 +357,28 @@ fn scattering(opticalDepth: f32, cosTheta: f32, octaveReach: f32, shade: vec2f) 
   return result * powder;
 }
 
+// Light diffused down to a sample from its crown, per unit illuminance: what the crown catches of
+// the key light (`catches`, and `shade`, the share of it past anything else in its way), carried
+// down through the column above by diffusion, 1 / (1 + ¾(1 − g)τ) (Bohren 1987), which unlike the
+// octaves' exponentials keeps a thick heap's base glowing faintly, and scattered toward the eye
+// with the octaves' energies and phases (`phase`, their sum).
+fn crownGlow(above: f32, catches: f32, shade: f32, phase: f32) -> f32 {
+  return catches * shade * diffuseTransmission(vec2f(above)).x * phase;
+}
+
+// The octaves' summed phase past the first, for crownGlow.
+fn diffusedPhase(cosTheta: f32) -> f32 {
+  var result = 0.0;
+  var energy = 1.0;
+  var anisotropy = 1.0;
+  for (var octave = 1u; octave < OCTAVES; octave++) {
+    energy *= OCTAVE_ENERGY;
+    anisotropy *= OCTAVE_SPREAD;
+    result += energy * dropletPhase(cosTheta, anisotropy);
+  }
+  return result;
+}
+
 // Where along a uniform step of optical depth τ the light scattered toward the eye comes from on
 // average, as a share of the step: ∫ s e^(−τs) ds / ∫ e^(−τs) ds over [0, 1], which is
 // 1/τ − 1/(e^τ − 1): the middle of a thin step, and ever nearer the front of a thick one.
@@ -347,6 +401,9 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
   // Across the sky one march spans a cell of pixels, this many km per km along the ray.
   let footprint = u.cloudCell * 2.0 * u.tanHalfFov.y / u.resolution.y;
   let octaveReach = octaveReachUnder(lighting.keyDirection);
+  // What the crowns catch of the key light per area of the columns below them.
+  let catches = mix(GRAZING_CROWN, 1.0, max(lighting.keyDirection.y, 0.0));
+  let phase = diffusedPhase(cosTheta);
 
   var radiance = vec3f(0.0);
   var seen = 1.0; // transmittance from the eye to the current sample
@@ -393,12 +450,16 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
       let crown = q * (1.0 + max(weather.top - h, 0.0) * (u.cloudTop - u.cloudBottom) / length(q));
       shade = vec2f(deckShade(q), deckShade(crown));
     }
-    let direct = keyLight * scattering(lightDepth, cosTheta, octaveReach, shade);
+    let above = opticalDepthAbove(h, mix(before, field, saturate((lit - t + span) / max(span, 1e-6))), weather);
+    // Light diffused many times takes whichever way in brings more: along the light, or down from
+    // the crown.
+    let direct = keyLight * max(scattering(lightDepth, cosTheta, octaveReach, shade), crownGlow(above, catches, shade.y, phase));
     // Ambient: skylight from above and grass light from below, blended by height and each dimmed
     // by the cloud it diffuses through, plus skylight from the sides.
-    let reach = ambientReach(h, weather.top, extinction);
+    let reach = ambientReach(h, above, extinction);
     let sky = mix(lighting.sky, lighting.shadedSky, 1.0 - exp(-lightDepth / SHADE_DEPTH));
-    let ambient = mix(mix(lighting.ground * reach.y, sky * reach.x, sqrt(h)), sky, SIDE_SKYLIGHT);
+    let side = sky * mix(diffuseTransmission(vec2f(min(lightDepth, above))).x, 1.0, OPEN_SIDES);
+    let ambient = mix(mix(lighting.ground * reach.y, sky * reach.x, sqrt(h)), side, SIDE_SKYLIGHT);
     // Energy-conserving integration over the step (Hillaire 2016); droplets barely absorb, so
     // scattering ≈ extinction and the in-scattered light is simply (direct + ambient) × opacity.
     let opacity = 1.0 - exp(-opticalDepth);
