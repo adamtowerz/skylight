@@ -1,6 +1,6 @@
 /**
  * Exposure lives on the GPU: a compute pass meters the sky-view LUT, seen through the deck and the fog, across
- * the camera's view and writes `{ value: f32 }` to a storage buffer that `post` reads, so
+ * the camera's view and writes `{ value, dome, rings }` to a storage buffer that `post` reads, so
  * auto-exposure never round-trips through the CPU.
  */
 
@@ -18,8 +18,8 @@ import { lutEntries, outputBinding } from './atmosphere'
 import { createComputePass } from './compute'
 import { uniformsEntry, type Pass, type PassContext } from './pass'
 
-/** Holds the WGSL `Exposure` struct (common.wgsl): an f32, then a vec3f at 16, padded to 32 bytes. */
-export const exposureBufferSize = 32
+/** Holds the WGSL `Exposure` struct (common.wgsl): an f32, a vec3f at 16, then eight vec4f rings at 32. */
+export const exposureBufferSize = 32 + 8 * 16
 
 export interface ExposureInputs {
   transmittance: GPUTextureView

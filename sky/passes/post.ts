@@ -10,6 +10,7 @@ import common from '../shaders/common.wgsl'
 import cubemap from '../shaders/cubemap.wgsl'
 import post from '../shaders/post.wgsl'
 import rain from '../shaders/rain.wgsl'
+import raindrop from '../shaders/raindrop.wgsl'
 import seenStars from '../shaders/seenstars.wgsl'
 import starfield from '../shaders/starfield.wgsl'
 import starlight from '../shaders/starlight.wgsl'
@@ -34,7 +35,7 @@ export async function createPostPass(
   { device, uniforms }: PassContext,
   { exposure, catalogueCells, catalogueEntries, seen, starCount, format }: PostInputs,
 ): Promise<Pass> {
-  const sources = [uniformsWgsl, common, camera, celestial, cubemap, starLayoutWgsl(starCount), seenStars, starlight, starfield, rain, post]
+  const sources = [uniformsWgsl, common, camera, celestial, cubemap, starLayoutWgsl(starCount), seenStars, starlight, starfield, raindrop, rain, post]
   const module = shader(device, 'post', sources)
   const pipeline = await createFullscreenPipeline(device, 'post', module, format)
   const sampler = device.createSampler({ label: 'post', magFilter: 'linear', minFilter: 'linear' })

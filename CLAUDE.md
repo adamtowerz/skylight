@@ -21,7 +21,8 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   deck, no fog under one. Haze, the deck's clean air and rain's washout go into the mood's air
   (`weathered`); fog and the deck are slabs solved in closed form (`slab.wgsl`: `fog.wgsl`, and
   `deck.wgsl`/`decklight.wgsl` in the cloud layer, the shadow map and the exposure), and rain is
-  drawn in post (`rain.wgsl`) with the dome's mean light from the exposure pass. Salts must keep
+  drawn in post (`rain.wgsl`: streaks radiating from the vanishing point, each a glass bead
+  refracting the frame and the dome's rings from the exposure pass, `raindrop.wgsl`). Salts must keep
   the seeds' skies.
 - `sky/renderer.ts` owns every shared GPU resource (uniform and exposure buffers, LUTs, noise
   volume, cloud shadow map, shaft and cloud layers, history pair, scene target) and encodes the

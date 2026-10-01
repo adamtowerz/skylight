@@ -48,7 +48,7 @@ post              scene target, exposure, seen stars    swap chain
 | `transmittance`   | `rgba16float` 256×64            | transmittance to space per (r, μ) (Hillaire 2020, Bruneton's mapping)   |
 | `multiscattering` | `rgba16float` 32×32             | ψ_ms: every scattering order past the first, 64 directions per texel    |
 | `skyview`         | `rgba16float` 192×108, 2 layers | atmosphere radiance around the observer, lit by the sun / by the moon   |
-| `exposure`        | storage buffer `{ value, dome }` | meters the sky-view LUT through the deck and fog over the view; compressed key; adapts; the dome's mean for the rain |
+| `exposure`        | storage buffer `{ value, dome, rings }` | meters the sky-view LUT through the deck and fog over the view; compressed key; adapts; the dome's mean, and in rings, for the rain |
 | `cloud shadow`    | `rgba16float` 256×256           | Beer shadow map of the cumulus along the key light (Hillaire 2016)      |
 | `light shafts`    | `rgba16float`, ¼ of the scene   | beams of sunlight through the gaps between the heaps, and lit share     |
 | `shaft mean`      | `rgba16float`, 1 per 128 px     | the lit share averaged over wide blocks, so shafts add only contrast    |
@@ -199,12 +199,20 @@ every drop's path radiates from one vanishing point near the zenith, tilted upwi
 and lengthens toward the edges of the view. The drops live on nested cylinders about the fall line
 (Tatarchuk 2006's rain layers, turned upward), each a lattice in azimuth and cot θ scrolling at the
 drops' fall speed, one hashed drop per cell at most, so a pixel looks at only a few cells. Each drop
-is a streak where it fell during the eye's exposure, box-filtered over each pixel so none crawls,
-and blurred by the eye's focus on the sky, so the nearest drift past large and soft. Its light is
-Garg & Nayar's: a drop is a tiny fisheye onto the dome above it, so it shows the dome's mean (the
-exposure pass meters it), and seen from below against an overcast, drops are grey, as snowflakes
-are. Their number and size follow Marshall & Palmer from the rain rate, so heavier rain is the
-same drops, more, larger and faster. Far rain is not drawn drop by drop: its drops are finer than a
+is a streak where it fell during the eye's exposure (about as long as the eye holds an image, so
+one frame's streak meets the next and the fall reads as motion), round-ended as a sphere sweeps,
+box-filtered over each pixel so none crawls, and blurred by the eye's focus on the sky, so the
+nearest drift past large and soft. Drops near the vanishing point, falling almost straight at us,
+would be still specks and far ones dust, so they fade out, leaving a calm opening the rain streams
+out of. A drop's light is that of a glass bead (`raindrop.wgsl`, after Garg & Nayar and Rousseau et
+al. 2006): it is a fisheye that shows the world around it inverted, so its middle shows the sky
+straight behind it and its rim the sky some 80° beyond, plus a Fresnel glint of what lies behind
+us. It refracts the frame itself where that is in view and otherwise the dome in rings (metered by
+the exposure pass), with the wet grass below the horizon: bright at heart, dark at the rim, warm
+where it catches a glow. Under an even grey deck that differs from the sky behind it by only a few
+per cent, which a still all but loses and the eye, sensitive to motion, does not, so the contrast
+is amplified in stops, bounded, keeping its sign and colour. Their number and size follow Marshall
+& Palmer from the rain rate, so heavier rain is the same drops, more, larger and faster. Far rain is not drawn drop by drop: its drops are finer than a
 pixel and their share of each falls as fast as their number grows, so it sums to the deck's veil.
 
 **Stars.** The stars are the real sky's: the Yale Bright Star Catalogue down to magnitude 5.5,

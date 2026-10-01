@@ -7,11 +7,16 @@ const TAU = 6.28318530717959;
 // any sequence can (a Weyl sequence), which makes it the ideal stride between successive jitters.
 const GOLDEN_RATIO = 0.618033988749895;
 
+// Rings the exposure pass splits the dome into, each an equal share of its cosine-weighted light.
+const METERED_RINGS = 8u;
+
 // Written by the exposure pass, read by post: a multiplier on scene radiance, and the sky dome's
-// mean radiance (cosine-weighted), which is what a raindrop shows.
+// mean radiance (cosine-weighted) and its mean in rings from the zenith down, by sin² of the
+// zenith angle: what a raindrop refracts, and what lights the grass it mirrors.
 struct Exposure {
   value: f32,
   dome: vec3f,
+  rings: array<vec4f, METERED_RINGS>,
 }
 
 // Rec. 709 luminance weights.

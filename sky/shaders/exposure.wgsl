@@ -3,8 +3,9 @@
 // deck and the fog, on average), takes the log-average luminance, and exposes for it with a compressed key: exposure ∝
 // L^(−COMPRESSION) rather than L⁻¹, so night stays darker than day and a sunset keeps its glow
 // instead of being normalised to grey. The result adapts smoothly over time, like an eye. Each
-// invocation also looks once at the whole dome, cosine-weighted, and their mean is the light a
-// raindrop shows (rain.wgsl): a drop is a tiny fisheye onto the sky above it.
+// invocation also looks once at the whole dome, cosine-weighted: their mean, overall and in rings
+// from the zenith down, is the surroundings a raindrop refracts and reflects (raindrop.wgsl), where
+// they lie outside the view.
 
 @group(0) @binding(5) var<storage, read_write> exposure: Exposure;
 
@@ -49,20 +50,36 @@ fn main(@builtin(local_invocation_id) id: vec3u, @builtin(local_invocation_index
   metered[index] = vec2f(log2(max(luminance(view.rgb), 1e-8)), 1.0 - view.a);
   dome[index] = seen(domeDirection(id.xy), onFog).rgb;
 
+  // Columns of the grid share a zenith angle: sum them first, then the rings, then the dome.
   for (var stride = SAMPLES / 2u; stride > 0u; stride >>= 1u) {
     workgroupBarrier();
     if (index < stride) {
       metered[index] += metered[index + stride];
-      dome[index] += dome[index + stride];
+      if (stride >= GRID) {
+        dome[index] += dome[index + stride];
+      }
     }
   }
+  workgroupBarrier();
+  let perRing = GRID / METERED_RINGS;
+  if (index < METERED_RINGS) {
+    var ring = vec3f(0.0);
+    for (var column = 0u; column < perRing; column++) {
+      ring += dome[index * perRing + column];
+    }
+    exposure.rings[index] = vec4f(ring / f32(perRing * GRID), 0.0);
+  }
   if (index == 0u) {
+    var whole = vec3f(0.0);
+    for (var column = 0u; column < GRID; column++) {
+      whole += dome[column];
+    }
     let average = metered[0] / f32(SAMPLES);
     let desired = log2(KEY) - COMPRESSION * average.x + HIGH_KEY * average.y;
     // The buffer starts zeroed: take the first frame's exposure as is.
     let previous = exposure.value;
     let adapted = select(desired, mix(log2(previous), desired, 1.0 - exp(-ADAPTATION * u.dt)), previous > 0.0);
     exposure.value = exp2(adapted);
-    exposure.dome = dome[0] / f32(SAMPLES);
+    exposure.dome = whole / f32(SAMPLES);
   }
 }
