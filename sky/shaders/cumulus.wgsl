@@ -37,6 +37,8 @@ const FIELD_CHANGE = 0.2;
 const BASE_DENSITY = 0.7;
 // How far local coverage strays from the mood's mean across the sky.
 const WEATHER_CONTRAST = 1.2;
+// The deck's cover by which no heap is left beneath it (weatherAt).
+const DECK_CAPS_HEAPS = 0.5;
 // Height fraction of fair-weather tops, where coverage is thin and where it is thick.
 const FAIR_TOPS = vec2f(0.4, 0.7);
 // Where in the weather's convection cells (its inverted Worley, 1 at their hearts) heaps tower.
@@ -141,24 +143,30 @@ fn cloudSpace(p: vec3f) -> vec3f {
 
 // The weather over a point of the layer, in the manner of Schneider's weather map: how much of the
 // sky is cloud there, the height fraction its heaps' tops reach, and how far the wind shear has
-// carried the heaps' shapes (km, horizontal).
+// carried the heaps' shapes (km, horizontal), and how dense they still are.
 struct Weather {
   cover: f32,
   top: f32,
   warp: vec2f,
+  density: f32,
 }
 
 // Local coverage is the mood's mean, broken into fields and gaps. Heaps climb with it, from
 // fair-weather puffs where it is thin to taller heaps where it is thick, and at the hearts of the
 // weather's convection cells, where the air rises fastest, they tower as far as the mood allows.
 // The weather's finer Worley shears the heaps' shapes by different amounts from place to place,
-// stretching some into long rafts and bunching others, so each heap's outline is its own.
+// stretching some into long rafts and bunching others, so each heap's outline is its own. A low
+// deck (deck.wgsl) shades the ground that feeds the heaps' thermals and caps them under its
+// inversion, where the last of them spread out into it (stratocumulus cumulogenitus): beneath a
+// closing deck the heaps shrink and thin away, and none are left by DECK_CAPS_HEAPS.
 fn weatherAt(position: vec3f) -> Weather {
   let weather = sampleNoise(vec3f(position.xz, 0.5 * u.cloudEvolution) / WEATHER_TILE);
-  let cover = saturate(u.cloudCoverage + (weather.r - 0.5) * WEATHER_CONTRAST);
+  let open = saturate(u.cloudCoverage + (weather.r - 0.5) * WEATHER_CONTRAST);
+  let capped = smoothstep(0.0, DECK_CAPS_HEAPS, u.deckCover);
+  let cover = open * (1.0 - capped);
   let towering = u.cloudTowers * smoothstep(TOWER_CELLS.x, TOWER_CELLS.y, weather.g);
   let warp = WARP * (weather.ba - 0.5);
-  return Weather(cover, mix(mix(FAIR_TOPS.x, FAIR_TOPS.y, cover), 1.0, towering), warp);
+  return Weather(cover, mix(mix(FAIR_TOPS.x, FAIR_TOPS.y, cover), 1.0, towering), warp, (1.0 - capped) * (1.0 - capped));
 }
 
 // A dome that the heaps' cores push up into (Schneider 2017's cumulus height gradient): the
@@ -231,7 +239,7 @@ fn fill(field: f32, widening: f32) -> f32 {
 // changes over the footprint. Where the light march and shadow map step far, heaps then shade
 // smoothly as they drift instead of sparkling and flickering.
 fn cumulusDensity(p: vec3f, weather: Weather, footprint: f32) -> f32 {
-  return fill(cumulusField(p, weather, footprint), FIELD_CHANGE * footprint) * baseDensity(p);
+  return fill(cumulusField(p, weather, footprint), FIELD_CHANGE * footprint) * baseDensity(p) * weather.density;
 }
 
 // ∫ saturate(f / width) df: one ramp, integrated.
@@ -350,7 +358,7 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
     let clear = min(field, before);
     let inCloud = select(span, span * cloudy / (cloudy - clear), clear < 0.0);
     let start = select(t - inCloud, t - span, field <= 0.0);
-    let opticalDepth = meanCloud(before, field) * baseDensity(p) * EXTINCTION * u.cloudDensity * span;
+    let opticalDepth = meanCloud(before, field) * baseDensity(p) * weather.density * EXTINCTION * u.cloudDensity * span;
     let extinction = opticalDepth / max(inCloud, 1e-6);
     // The step is lit where the light it sends toward the eye comes from on average, which the
     // cloud in front of it pulls toward the step's start: a heap's rim, not its inside, catches

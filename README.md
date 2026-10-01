@@ -179,11 +179,14 @@ its base: the key light and the whole dome light its top, and what the eye sees 
 through (`decklight.wgsl`), so its underside is a luminous soft grey, brighter where it is thinner
 and toward the sun, and limb-darkened like light escaping a star (the CIE overcast sky is about
 three times brighter overhead than at the horizon). A broken deck lies in rows along rolls across
-the wind, its cells drawn out along them, lumpy, and frayed into wisps where they thin out at
-their edges. Each column is lit as a slab, but light also diffuses sideways through the deck over
-about its depth (radiative smoothing), so a thin edge is a veil of the diffuse light of the cell
-it frays from rather than a glowing outline; only the light it diffracts, close around the sun or
-moon, is its own silver lining. The top takes in a low sun only as the sine of its elevation, so
+the wind, never evenly: eddies push the rolls together and apart and they fade and strengthen
+along their length, so rows merge, split and break into cells, drawn out along them, lumpy, and
+frayed into wisps where they thin out at their edges. An edge's column grows as the cube of the
+way in, so it is a veil a good way in, not a contour. Each column is lit as a slab, but light also
+diffuses sideways through the deck over about its depth (radiative smoothing), so a thin edge is
+a veil of the diffuse light of the cell it frays from rather than a glowing outline; only the
+light it diffracts, close around the sun or moon, is its own silver lining, and since the edge
+thickens gradually that lining is a soft band. The top takes in a low sun only as the sine of its elevation, so
 at sunset a whole deck is lit by the sky above it, a dim grey of the dusk's own colour. Its base
 is never flat: the rolls, cells and lumps deepen and thin the column, darker where it is deeper
 and sags lower, even in a whole deck, and under a whole deck ragged scud hurries past beneath,
@@ -191,6 +194,13 @@ lower and so faster across the sky. At
 sunset the deck can catch fire from below: a sun just under the horizon shines up along a path
 that dips beneath the base and climbs back to its height tens of kilometres off, so where the deck
 breaks there the low red light floods in and lights the underside of the rolls that face it. The
+gap is the deck's openness along the many kilometres over which the path climbs through the base,
+and on the way in the light skims beneath the base's lumps: those that hang lower toward the light
+shade the base behind them, so the underside is lit on the flanks of its lumps and rolls that face
+the light and dims in their lee, while thin edges, which it shines through, are a veil of their
+cell's glow. A deck also shades the ground that feeds the heaps' thermals and caps them under its
+inversion, so beneath a closing deck the heaps shrink and thin away, gone once it covers half the
+sky. The
 deck hides whatever lies above it through the scene's alpha (heaps, mackerel sky, cirrus, moon and
 stars), its optical depth joins the cumulus in the shadow map, so a whole deck shades the light
 shafts away, and the exposure meters the sky through it and opens up as it veils the view, so a

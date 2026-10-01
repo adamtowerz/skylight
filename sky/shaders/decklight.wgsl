@@ -52,19 +52,24 @@ fn deckTopIlluminance(base: vec3f) -> vec3f {
   return key.illuminance * transmittanceAt(top, key.direction);
 }
 
-// The deck along `dir` where its column at `base` has optical depth `tau`, thinned from `heart`,
-// the depth of the cell at its heart, as deckGlow (rgb its radiance, a the transmittance of what
+// The share of its cell's light that a thin edge of optical depth `tau`, thinned from the cell's
+// `body`, shows along a view at zenith cosine `view`: as much as it is opaque.
+fn veiled(tau: f32, body: f32, view: f32) -> f32 {
+  return (1.0 - exp(-tau / view)) / (1.0 - exp(-body / view));
+}
+
+// The deck along `dir` where its column at `base` has optical depth `tau`, thinned from `body`,
+// the depth of the cell it frays from, as deckGlow (rgb its radiance, a the transmittance of what
 // lies beyond). Light diffuses sideways through the deck as it scatters down, over about the
 // deck's depth (radiative smoothing: Marshak, Davis, Wiscombe & Cahalan 1995), so a cell's thin,
 // frayed edge does not glow with diffuse light of its own, as an even slab that thin would: it
 // is a veil of the diffuse light of the cell it frays from, as opaque as it is. Only the light it
 // diffracts, close around the key light, is its own: the silver lining of a thin edge before the
 // sun or moon.
-fn deckVeil(dir: vec3f, base: vec3f, tau: f32, heart: f32, sky: vec3f) -> vec4f {
+fn deckVeil(dir: vec3f, base: vec3f, tau: f32, body: f32, sky: vec3f) -> vec4f {
   let view = max(dir.y, DECK_VIEW_GRAZING);
-  let body = max(tau, heart);
   let glow = deckGlow(dir, base, body, sky);
-  let seen = (1.0 - exp(-tau / view)) / (1.0 - exp(-body / view));
+  let seen = veiled(tau, body, view);
   let key = keyLight();
   let mu = max(key.direction.y, DECK_GRAZING);
   let lining = max(slabDiffracted(tau, mu) - seen * slabDiffracted(body, mu), 0.0)
