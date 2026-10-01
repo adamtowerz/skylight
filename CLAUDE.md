@@ -18,7 +18,7 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   hashed spells (own length and salt), shaped by the hour of day: radiation fog in the small hours
   to mid-morning, haze on warm afternoons, altocumulus thinnest at midday, a rain deck about one
   day in six. Dependent kinds are derived in `weatherAt`: rain (`precipitation`) only under a thick
-  deck, no fog under one (and in `cumulus.wgsl`, no heaps under one past half cover). Haze, the deck's clean air and rain's washout go into the mood's air
+  deck, no fog under one (and in `cumulus.wgsl`, heaps capped, spread and thinned as one closes, patchily shaded by its cells, gone near full cover). Haze, the deck's clean air and rain's washout go into the mood's air
   (`weathered`); fog and the deck are slabs solved in closed form (`slab.wgsl`: `fog.wgsl`, and
   `deck.wgsl`/`decklight.wgsl` in the cloud layer, the shadow map and the exposure), and rain is
   drawn in post (`rain.wgsl`: streaks radiating from the vanishing point, each a glass bead

@@ -301,7 +301,7 @@ fn altocumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
     let outOfLayer = select(h, shape.tops - h, up > 0.0) * depth / max(abs(up), 1e-3);
     let lightDepth = ALTO_EXTINCTION * WAY_OUT * shape.density * min(shape.toRim, outOfLayer);
     let keyLight = lighting.keyIlluminance * transmittanceAt(q, lighting.keyDirection);
-    let direct = keyLight * scattering(lightDepth, cosTheta, OCTAVE_REACH);
+    let direct = keyLight * scattering(lightDepth, cosTheta, OCTAVE_REACH, vec2f(1.0));
     // Skylight through the cloudlet above the sample and grass light through the one below.
     let reach = 1.0 / (1.0 + diffusion * shape.density * vec2f(max(shape.tops - h, 0.0), h));
     let sky = mix(lighting.sky, lighting.shadedSky, 1.0 - exp(-lightDepth / SHADE_DEPTH));

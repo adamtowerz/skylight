@@ -37,8 +37,12 @@ const FIELD_CHANGE = 0.2;
 const BASE_DENSITY = 0.7;
 // How far local coverage strays from the mood's mean across the sky.
 const WEATHER_CONTRAST = 1.2;
-// The deck's cover by which no heap is left beneath it (weatherAt).
-const DECK_CAPS_HEAPS = 0.5;
+// The deck's cover by which no heap is left beside it (weatherAt).
+const DECK_CAPS_HEAPS = 0.95;
+// How far a closing deck lowers the heaps' tops, and the power of their domes once it has spread
+// them out (3 for heaps free to rise).
+const CAPPED_TOPS = 0.4;
+const SPREAD_DOME = 1.2;
 // Height fraction of fair-weather tops, where coverage is thin and where it is thick.
 const FAIR_TOPS = vec2f(0.4, 0.7);
 // Where in the weather's convection cells (its inverted Worley, 1 at their hearts) heaps tower.
@@ -149,6 +153,7 @@ struct Weather {
   top: f32,
   warp: vec2f,
   density: f32,
+  spread: f32, // how far a deck has spread the heaps' domes out (0 free, 1 capped)
 }
 
 // Local coverage is the mood's mean, broken into fields and gaps. Heaps climb with it, from
@@ -157,23 +162,27 @@ struct Weather {
 // The weather's finer Worley shears the heaps' shapes by different amounts from place to place,
 // stretching some into long rafts and bunching others, so each heap's outline is its own. A low
 // deck (deck.wgsl) shades the ground that feeds the heaps' thermals and caps them under its
-// inversion, where the last of them spread out into it (stratocumulus cumulogenitus): beneath a
-// closing deck the heaps shrink and thin away, and none are left by DECK_CAPS_HEAPS.
+// inversion: as it closes in they stop towering, stay lower and spread out flat (stratocumulus
+// cumulogenitus), their domes thinning gradually to their edges; a broken deck still has its heaps
+// in the gaps, but fewer and thinner as it closes, and none are left by DECK_CAPS_HEAPS.
 fn weatherAt(position: vec3f) -> Weather {
   let weather = sampleNoise(vec3f(position.xz, 0.5 * u.cloudEvolution) / WEATHER_TILE);
   let open = saturate(u.cloudCoverage + (weather.r - 0.5) * WEATHER_CONTRAST);
-  let capped = smoothstep(0.0, DECK_CAPS_HEAPS, u.deckCover);
-  let cover = open * (1.0 - capped);
-  let towering = u.cloudTowers * smoothstep(TOWER_CELLS.x, TOWER_CELLS.y, weather.g);
+  let capped = saturate(u.deckCover / DECK_CAPS_HEAPS);
+  let suppressed = capped * capped * capped;
+  let cover = open * (1.0 - suppressed);
+  let towering = u.cloudTowers * smoothstep(TOWER_CELLS.x, TOWER_CELLS.y, weather.g) * (1.0 - capped);
   let warp = WARP * (weather.ba - 0.5);
-  return Weather(cover, mix(mix(FAIR_TOPS.x, FAIR_TOPS.y, cover), 1.0, towering), warp, (1.0 - capped) * (1.0 - capped));
+  let top = mix(mix(FAIR_TOPS.x, FAIR_TOPS.y, cover), 1.0, towering) * (1.0 - CAPPED_TOPS * capped);
+  return Weather(cover, top, warp, 1.0 - suppressed, capped);
 }
 
 // A dome that the heaps' cores push up into (Schneider 2017's cumulus height gradient): the
-// higher a heap's own field, the higher its top.
-fn heightProfile(h: f32, top: f32) -> f32 {
+// higher a heap's own field, the higher its top. Free heaps close over in a steep dome; those a
+// deck has `spread` out thin away gradually from their cores to their edges.
+fn heightProfile(h: f32, top: f32, spread: f32) -> f32 {
   let rise = h / top;
-  return saturate(1.0 - rise * rise * rise);
+  return saturate(1.0 - mix(rise * rise * rise, pow(max(rise, 0.0), SPREAD_DOME), spread));
 }
 
 // The field below which no air has yet condensed: a level plane that cuts every heap's base flat
@@ -192,7 +201,7 @@ fn condensationField(h: f32) -> f32 {
 fn cumulusField(p: vec3f, weather: Weather, footprint: f32) -> f32 {
   let h = heightFraction(p);
   let rise = h / weather.top;
-  let profile = heightProfile(h, weather.top);
+  let profile = heightProfile(h, weather.top, weather.spread);
   let threshold = 1.0 - weather.cover;
   let crown = smoothstep(0.3, 0.8, rise);
   let attached = mix(ATTACHED.x, ATTACHED.y, crown);
@@ -297,14 +306,17 @@ fn dropletPhase(cosTheta: f32, anisotropy: f32) -> f32 {
 
 // Direct light scattered toward the eye per unit illuminance, summed over bounces (Wrenninge et
 // al. 2013, "Oz: The Great and Volumetric"): later octaves reach deeper with softer phases, so
-// thick cloud glows white instead of turning grey.
-fn scattering(opticalDepth: f32, cosTheta: f32, octaveReach: f32) -> f32 {
+// thick cloud glows white instead of turning grey. `shade` is the share of the light that reaches
+// the sample past anything else in its way (x), and the share that reaches where its many-times
+// scattered light comes from (y).
+fn scattering(opticalDepth: f32, cosTheta: f32, octaveReach: f32, shade: vec2f) -> f32 {
   var result = 0.0;
   var energy = 1.0;
   var reach = 1.0;
   var anisotropy = 1.0;
   for (var octave = 0u; octave < OCTAVES; octave++) {
-    result += energy * dropletPhase(cosTheta, anisotropy) * exp(-reach * opticalDepth);
+    let lit = select(shade.y, shade.x, octave == 0u);
+    result += lit * energy * dropletPhase(cosTheta, anisotropy) * exp(-reach * opticalDepth);
     energy *= OCTAVE_ENERGY;
     reach *= octaveReach;
     anisotropy *= OCTAVE_SPREAD;
@@ -370,12 +382,20 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
     // error averages out along the ray instead of repeating the pixel's pattern. It strides with
     // where the step is lit, not with the step's number, which changes where an edge crosses a
     // sample and would print the jump in the light march's error as a contour line.
+    let h = saturate(heightFraction(q));
     let lightJitter = fract(jitter + GOLDEN_RATIO * (lit - enter) / stepLength);
     let lightDepth = opticalDepthToLight(q, lighting.keyDirection, weather, lightJitter);
-    let direct = keyLight * scattering(lightDepth, cosTheta, octaveReach);
+    // Beside a deck, the cells between the step and a low light may shade it (deck.wgsl), and the
+    // light diffused many times comes down from the heap's crown, which may stand in the sun above
+    // them: shaded flanks and bases still glow, lit ones blaze.
+    var shade = vec2f(1.0);
+    if (u.deckCover > 0.0) {
+      let crown = q * (1.0 + max(weather.top - h, 0.0) * (u.cloudTop - u.cloudBottom) / length(q));
+      shade = vec2f(deckShade(q), deckShade(crown));
+    }
+    let direct = keyLight * scattering(lightDepth, cosTheta, octaveReach, shade);
     // Ambient: skylight from above and grass light from below, blended by height and each dimmed
     // by the cloud it diffuses through, plus skylight from the sides.
-    let h = saturate(heightFraction(q));
     let reach = ambientReach(h, weather.top, extinction);
     let sky = mix(lighting.sky, lighting.shadedSky, 1.0 - exp(-lightDepth / SHADE_DEPTH));
     let ambient = mix(mix(lighting.ground * reach.y, sky * reach.x, sqrt(h)), sky, SIDE_SKYLIGHT);

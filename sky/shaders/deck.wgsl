@@ -104,6 +104,14 @@ const UNDERLIGHT_SHADE_SOFTNESS = 0.08;
 const UNDERLIGHT_LEE = 0.4;
 const UNDERLIGHT_FRINGE = 0.06;
 const SCUD_FLANK = 0.3;
+// The deck's cells' tops, for the shade they cast on the heaps beside them: the tallest stand
+// this many times the deck's thickness above its base; the light's path past them is sampled at
+// these shares of the way to where it clears them (at least, and at most, DECK_SHADE_REACH km),
+// and a top this far above or below the path (km) shades it fully or not at all.
+const DECK_TALLEST = 1.3;
+const DECK_SHADE_REACH = vec2f(1.0, 40.0);
+const DECK_SHADE_SAMPLES = array(0.1, 0.35, 0.8);
+const DECK_SHADE_SOFTNESS = 0.35;
 // Rain's extinction, km⁻¹ at 1 mm/h, and how it grows with the rate: the Marshall–Palmer drops'
 // cross-section, less the half they only diffract forward (Atlas 1953).
 const RAIN_EXTINCTION = 0.18;
@@ -159,10 +167,36 @@ fn deckDepthAt(p: vec3f, footprint: f32) -> f32 {
   return u.deckDepth * deckColumn(deckSpace(p, DECK_SPEED), footprint).x;
 }
 
+// How much of the key light reaches the planet-centred point `p` past the deck's cells, which
+// stand as tall above its base as they are deep: a heap beside the deck, its base among the
+// cells' tops, is shaded by those between it and a low light, and lit through the gaps.
+fn deckShade(p: vec3f) -> f32 {
+  let key = keyLight();
+  let height = length(p) - u.bottomRadius;
+  let across = max(length(key.direction.xz), 1e-3);
+  let toward = key.direction.xz / across;
+  let climb = key.direction.y / across;
+  let tallest = u.deckBase + DECK_THICKNESS * DECK_TALLEST;
+  if (height >= tallest) {
+    return 1.0;
+  }
+  let reach = clamp((tallest - height) / max(climb, 1e-3), DECK_SHADE_REACH.x, DECK_SHADE_REACH.y);
+  let x = deckSpace(p, DECK_SPEED);
+  var lit = 1.0;
+  for (var i = 0; i < 3; i++) {
+    let d = reach * DECK_SHADE_SAMPLES[i];
+    let ray = height + (climb + 0.5 * d / u.bottomRadius) * d;
+    let top = u.deckBase + DECK_THICKNESS * deckColumn(x + toward * d, max(0.2 * d, 1.0)).x;
+    lit *= 1.0 - smoothstep(-DECK_SHADE_SOFTNESS, DECK_SHADE_SOFTNESS, top - ray);
+  }
+  return lit;
+}
+
 // How much of a key light low enough to shine up under the deck gets in, from `x` (deck space):
 // through the gap where its path climbs back to the base's height. The path climbs so gently that
 // it rises through the base over many kilometres, so the gap is the deck's openness along that
-// stretch of it, not at a point.
+// stretch of it, not at a point: the share of it that is open, as what gets through is the mean
+// of what each part of the sun's light finds, not what the stretch's mean column would let by.
 fn underlightGap(x: vec2f) -> f32 {
   let key = keyLight();
   let across = max(length(key.direction.xz), 1e-3);
@@ -172,7 +206,7 @@ fn underlightGap(x: vec2f) -> f32 {
   let gap = x + toward * clamp(2.0 * u.bottomRadius * dip, UNDERLIGHT_REACH.x, UNDERLIGHT_REACH.y);
   let near = deckColumn(gap - 0.5 * UNDERLIGHT_CROSSING * toward, 1.0).x;
   let far = deckColumn(gap + 0.5 * UNDERLIGHT_CROSSING * toward, 1.0).x;
-  return 1.0 - saturate(0.5 * (near + far) / THINNEST);
+  return 1.0 - 0.5 * (saturate(near / THINNEST) + saturate(far / THINNEST));
 }
 
 // How much of the low key light that gets in under the deck reaches its base at `x` (deck space),
