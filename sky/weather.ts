@@ -172,11 +172,12 @@ const thickFogExtinction = 10 // km⁻¹, grey: droplets are far larger than lig
 
 /**
  * The deck, made physical. As it comes in it covers more of the sky, lowers and thickens: from a
- * broken stratocumulus at 1.2 km, grey at the hearts of its cells (optical depth about 20) and
- * translucent at their rims, to the unbroken nimbostratus of a rainy day at 600 m, fifty deep.
+ * broken stratocumulus at 1.2 km, in rows of cells grey at their hearts (optical depth about 17 on
+ * average) and thinning to wisps at their edges, to the unbroken nimbostratus of a rainy day at
+ * 600 m, about forty deep.
  */
 const deckBase = { broken: 1.2, whole: 0.6 } // km
-const deckDepth = { broken: 20, whole: 50 }
+const deckDepth = { broken: 17, whole: 42 }
 /** Light rain, mm/h: what `precipitation` 1 brings (light rain is up to 2.5 mm/h). */
 const lightRain = 2
 

@@ -3,7 +3,8 @@
 // key light and the sky's whole dome light its top; what the eye sees from below is what diffuses
 // through, so the grey underside is luminous rather than dark, brighter where the deck is thinner,
 // and brightest toward the sun where it is thin enough to still show which way the light comes
-// from. Seen from beneath, the light leaving a thick slab is not uniform but limb-darkened, like
+// from; a thin edge, though, shows the light of the cell it frays from (deckVeil). Seen from
+// beneath, the light leaving a thick slab is not uniform but limb-darkened, like
 // light escaping a star: the overcast sky is about three times brighter overhead than at the
 // horizon (the escape function 3(1 + 2μ)/7, Chandrasekhar 1960; the CIE standard overcast sky,
 // Moon & Spencer 1942). The grass bounces some of what gets through back up, and the deck sends
@@ -13,12 +14,13 @@
 // Height of the deck's top above its base, km: where the key light reaches it through the
 // atmosphere, so it keeps the sun for a moment after the ground has lost it.
 const DECK_THICKNESS = 1.5;
-// A deck's top is lumpy, so a low light is taken in no more grazing than this (a zenith cosine).
-const DECK_GRAZING = 0.1;
+// However lumpy its top, a deck takes in a low light only as the sine of its elevation: a level
+// patch of sky intercepts that share of it, and the lumps just share it out. They catch a little
+// still as it sinks to and past the horizontal, so it is taken in no more grazing than this (a
+// zenith cosine); beyond it what lights the deck at sunset is the sky.
+const DECK_GRAZING = 0.02;
 // The lowest zenith cosine the deck is seen through.
 const DECK_VIEW_GRAZING = 0.05;
-// The deck's mean column, as a share of its thickest, where it is whole (deck.wgsl's shape).
-const DECK_MEAN_COLUMN = 0.85;
 
 // Where view ray `dir` meets the sphere `height` km above the ground (planet-centred), and how far.
 fn onLayer(dir: vec3f, height: f32) -> vec4f {
@@ -34,14 +36,41 @@ fn onLayer(dir: vec3f, height: f32) -> vec4f {
 // way as far as the key light's does (slab.wgsl).
 fn deckGlow(dir: vec3f, base: vec3f, tau: f32, sky: vec3f) -> vec4f {
   let key = keyLight();
-  let top = base * (1.0 + DECK_THICKNESS / length(base));
-  let illuminance = key.illuminance * transmittanceAt(top, key.direction);
+  let illuminance = deckTopIlluminance(base);
   let escape = 3.0 * (1.0 + 2.0 * max(dir.y, 0.0)) / 7.0;
   let lit = slabGlow(dir, key.direction, max(key.direction.y, DECK_GRAZING), illuminance, tau, escape);
   let diffuse = max(1.0 - slabReflectance(tau, 0.5) - exp(-2.0 * tau), 0.0);
   let forward = pow(DROPLET_ANISOTROPY, 1.0 + 2.0 * tau) * diffuse;
   let bounce = 1.0 / (1.0 - u.groundAlbedo * slabReflectance(tau, 0.5));
   return vec4f((lit + escape * sky * (diffuse - forward)) * bounce, forward);
+}
+
+// Illuminance of the key light on the deck's top above its base at `base` (planet-centred).
+fn deckTopIlluminance(base: vec3f) -> vec3f {
+  let key = keyLight();
+  let top = base * (1.0 + DECK_THICKNESS / length(base));
+  return key.illuminance * transmittanceAt(top, key.direction);
+}
+
+// The deck along `dir` where its column at `base` has optical depth `tau`, thinned from `heart`,
+// the depth of the cell at its heart, as deckGlow (rgb its radiance, a the transmittance of what
+// lies beyond). Light diffuses sideways through the deck as it scatters down, over about the
+// deck's depth (radiative smoothing: Marshak, Davis, Wiscombe & Cahalan 1995), so a cell's thin,
+// frayed edge does not glow with diffuse light of its own, as an even slab that thin would: it
+// is a veil of the diffuse light of the cell it frays from, as opaque as it is. Only the light it
+// diffracts, close around the key light, is its own: the silver lining of a thin edge before the
+// sun or moon.
+fn deckVeil(dir: vec3f, base: vec3f, tau: f32, heart: f32, sky: vec3f) -> vec4f {
+  let view = max(dir.y, DECK_VIEW_GRAZING);
+  let body = max(tau, heart);
+  let glow = deckGlow(dir, base, body, sky);
+  let seen = (1.0 - exp(-tau / view)) / (1.0 - exp(-body / view));
+  let key = keyLight();
+  let mu = max(key.direction.y, DECK_GRAZING);
+  let lining = max(slabDiffracted(tau, mu) - seen * slabDiffracted(body, mu), 0.0)
+    * henyeyGreenstein(dot(dir, key.direction), DIFFRACTION);
+  let opacity = 1.0 - exp(-body / view) - glow.a;
+  return vec4f(seen * glow.rgb + lining * deckTopIlluminance(base), 1.0 - seen * opacity);
 }
 
 // The view along `dir` of `behind` (the sky and clouds beyond) through the deck on average,
@@ -51,7 +80,7 @@ fn overcast(dir: vec3f, behind: vec3f, sky: vec3f) -> vec4f {
   if (u.deckCover <= 0.0) {
     return vec4f(behind, 1.0);
   }
-  let tau = DECK_MEAN_COLUMN * u.deckDepth;
+  let tau = u.deckDepth;
   let glow = deckGlow(dir, onLayer(dir, u.deckBase).xyz, tau, sky);
   let through = mix(1.0, exp(-tau / max(dir.y, DECK_VIEW_GRAZING)) + glow.a, u.deckCover);
   return vec4f(u.deckCover * glow.rgb + through * behind, through);

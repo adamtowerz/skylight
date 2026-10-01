@@ -82,7 +82,7 @@ const schema = {
   // Deck and rain (km, mm/h): a low grey deck of stratus and nimbostratus, and the rain from it
   deckCover: 'f32', // share of the sky it covers
   deckBase: 'f32', // height of its base, on average
-  deckDepth: 'f32', // optical depth of its thickest columns
+  deckDepth: 'f32', // optical depth of its columns where whole, on average
   rainRate: 'f32',
 
   // Post

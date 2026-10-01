@@ -21,6 +21,12 @@ fn slabReflectance(tau: f32, mu: f32) -> f32 {
   return (diffusion + (0.5 - 0.75 * mu) * (1.0 - exp(-tau / mu))) / (1.0 + diffusion);
 }
 
+// The share of a light arriving at zenith cosine `mu` that a slab of optical depth `tau` only
+// diffracts: it keeps close to the light's direction, its soft disc and aureole.
+fn slabDiffracted(tau: f32, mu: f32) -> f32 {
+  return exp(-0.5 * tau / mu) - exp(-tau / mu);
+}
+
 // Radiance of the light a light of illuminance `illuminance` (on the slab's top, from `light`,
 // arriving at zenith cosine `mu`) sends down out of a slab of optical depth `tau` along `dir`, less
 // what it lets through unscattered. `diffuseWeight` scales the diffuse part by how much of it
@@ -28,8 +34,7 @@ fn slabReflectance(tau: f32, mu: f32) -> f32 {
 fn slabGlow(dir: vec3f, light: vec3f, mu: f32, illuminance: vec3f, tau: f32, diffuseWeight: f32) -> vec3f {
   let direct = exp(-tau / mu);
   let cosTheta = dot(dir, light);
-  // Light only ever diffracted keeps close to the light's direction: its soft disc and aureole.
-  let diffracted = exp(-0.5 * tau / mu) - direct;
+  let diffracted = slabDiffracted(tau, mu);
   // The rest is diffuse, and each scattering blurs its forward peak further; its phase is
   // normalised over the lower hemisphere as it goes from the light's direction (g → 1) to
   // uniform (g → 0).

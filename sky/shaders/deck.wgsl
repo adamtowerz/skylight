@@ -4,10 +4,13 @@
 // so it is a slab whose column varies across the sky, found where the view ray meets its base.
 //
 // As the weather brings it in (`weather.ts`) it covers more of the sky: first a broken
-// stratocumulus, its cells (the noise volume's Perlin–Worley, after Schneider 2015) clumped in
-// patches with blue or sunset between them, then an unbroken grey dome. Its underside is never
-// flat: wind shear rolls it into long soft billows across the wind (undulatus), darker where the
-// column is deeper and sags lower, lighter between, and Worley lumps mottle it. It drifts slowly,
+// stratocumulus, then an unbroken grey dome. Wind shear rolls the layer into long billows across
+// the wind (undulatus), so a broken deck lies in rows
+// along them, its cells (the noise volume's Perlin–Worley, after Schneider 2015) drawn out along
+// the rolls, lumpy, clumped in patches with blue or sunset between them, and thinning toward
+// their edges, where finer wisps drawn out along the wind fray them. Its underside is never flat,
+// even where whole: the rolls, cells and Worley lumps deepen and thin its column, darker where it
+// is deeper and sags lower, lighter between. It drifts slowly,
 // at the heaps' angular pace, so the cloud history follows it. Beneath it, where it is thick,
 // ragged shreds of scud (fractus) hurry past, lower and so faster across the sky; lit only by the
 // deck above and the dim grass below, they are darker than the deck.
@@ -23,8 +26,16 @@
 // it drifts across the sky at their angular pace; the scud beneath it hurries past faster still.
 const DECK_SPEED = 0.35;
 const SCUD_SPEED = 0.6;
-// Tiles of the noise volume, km: where the deck is broken or whole, the cells of a broken deck,
-// and the lumps that mottle its base.
+// Rolls, the roll vortices of a sheared mixed layer (Atkinson & Zhang 1996): crest to crest, km,
+// across the wind (unit, x = east, z = north); how far they wander (in rolls) over how many km.
+const ROLL_SPACING = 0.8;
+const ROLL_ACROSS = vec2f(0.93, -0.37);
+const ROLL_BEND = 1.2;
+const ROLL_BEND_TILE = 12.0;
+// How many times longer than wide the cells are, drawn out along the rolls.
+const ROLL_STRETCH = 1.6;
+// Tiles of the noise volume, km: where the deck is broken or whole, its cells, and the lumps
+// that fray their edges and mottle its base.
 const DECK_PATCH_TILE = 40.0;
 const DECK_CELL_TILE = 3.0;
 const LUMP_TILE = 1.0;
@@ -32,33 +43,41 @@ const LUMP_TILE = 1.0;
 const LUMP_SPACING = LUMP_TILE / 4.0;
 // Half the range of the deck's field over which its cover goes from none to nearly whole.
 const FIELD_SPREAD = 0.3;
-// Share of the deck's field that is its cells (the rest is its patches). Past the edge of a gap
-// the column rises quickly to a translucent rim, within DECK_EDGE of the field, then gradually,
-// over DECK_BODY, to its full depth, so broken cells are thickest and greyest at their hearts.
+// Share of the deck's field that is its cells (the rest is its patches), and how far the rolls
+// carry it: a broken deck breaks into rows of cells along the rolls, with lanes between them.
 const DECK_CELLS = 0.8;
-const DECK_EDGE = 0.12;
-const DECK_BODY = 0.35;
-const DECK_RIM = 0.15;
-// Rolls: crest to crest, km, across the wind (unit, x = east, z = north); how far they wander
-// (in rolls) over how many km; how deep a column they make and unmake (±), and the lumps too.
-const ROLL_SPACING = 0.7;
-const ROLL_ACROSS = vec2f(0.93, -0.37);
-const ROLL_BEND = 1.2;
-const ROLL_BEND_TILE = 12.0;
-const ROLL_CONTRAST = 0.35;
-const LUMP_CONTRAST = 0.4;
-// How far the rolls and the lumps carry the edges of a broken deck, in units of its field: it
-// breaks into rows of lumpy cells.
-const ROLL_ROWS = 0.1;
+const ROLL_ROWS = 0.12;
+// How far the lumps carry the edges of the cells, in units of the field; and wisps, finer and
+// drawn out along the wind (tile, km, and stretch), that eat into them where they are thin.
 const LUMP_EDGES = 0.35;
-// How far the base sags under a column one full depth deeper than the mean, km.
+const DECK_WISP_TILE = 0.6;
+const DECK_WISP_STRETCH = 4.0;
+const DECK_WISP_SPACING = DECK_WISP_TILE / 8.0;
+const DECK_WISP_DEPTH = 0.12;
+// Past the edge of a gap a cell fades in over DECK_EDGE of the field, frayed and thin, and
+// deepens over DECK_BODY, from HEART_EDGE of its depth to all of it at its heart: broken cells
+// are greyest at their hearts.
+const DECK_EDGE = 0.15;
+const DECK_BODY = 0.35;
+const HEART_EDGE = 0.25;
+// How much deeper or shallower (±, a share of the mean) the rolls, the cells and the lumps make a
+// whole deck's column: its base is mottled, darker where it is deep.
+const ROLL_CONTRAST = 0.3;
+const CELL_CONTRAST = 0.3;
+const LUMP_CONTRAST = 0.5;
+// The thinnest a whole deck gets, as a share of its mean column: thinner than that is the edge of
+// a gap.
+const THINNEST = 0.4;
+// How far the base sags under a column one mean depth deeper than the mean, km.
 const RELIEF = 0.12;
 // Scud: how far beneath the base, km; the size of its shreds along and across the wind; how much
-// of the sky it covers under a whole deck; and its thickest optical depth.
+// of the sky it covers under a whole deck; its thickest optical depth, and over how much of its
+// field it gets there.
 const SCUD_BELOW = 0.25;
 const SCUD_TILE = vec2f(3.0, 1.2);
 const SCUD_COVER = 0.25;
 const SCUD_DEPTH = 4.0;
+const SCUD_EDGE = 0.12;
 // A sun (or moon) lower than this (the sine of ≈ 3°) may light the deck from beneath, through a
 // gap between these distances, km; the scud's ragged shreds face it as if they rose this steeply.
 const UNDERLIGHT_BELOW = 0.05;
@@ -75,37 +94,43 @@ fn deckSpace(p: vec3f, speed: f32) -> vec2f {
   return p.xz - speed * u.cloudWind;
 }
 
-// The share of the deck's thickest column at `x` (deck space): 0 in its gaps, about
-// DECK_MEAN_COLUMN on average where whole, rolled and lumped by as much as a sample standing for
-// `footprint` km resolves.
-fn deckColumn(x: vec2f, footprint: f32) -> f32 {
+// The deck's column at `x` (deck space), as a share of its mean depth where whole: 0 in its gaps,
+// thinning toward their edges, rolled, celled and lumped by as much as a sample standing for
+// `footprint` km resolves (x); and the column it thins from, the depth of the cell at its heart (y).
+fn deckColumn(x: vec2f, footprint: f32) -> vec2f {
   let evolution = 0.3 * u.cloudEvolution;
-  let patches = sampleNoise(vec3f(x / DECK_PATCH_TILE, evolution / DECK_PATCH_TILE)).r;
-  let cells = sampleNoise(vec3f(x / DECK_CELL_TILE, evolution / DECK_CELL_TILE));
+  let across = dot(x, ROLL_ACROSS);
+  let along = dot(x, vec2f(-ROLL_ACROSS.y, ROLL_ACROSS.x));
   let bend = ROLL_BEND * sampleNoise(vec3f(x / ROLL_BEND_TILE, 0.37)).r;
-  let rolls = cos(TAU * (dot(x, ROLL_ACROSS) / ROLL_SPACING + bend));
+  let rolls = cos(TAU * (across / ROLL_SPACING + bend));
+  let drawn = vec2f(across, along / ROLL_STRETCH);
+  let patches = sampleNoise(vec3f(x / DECK_PATCH_TILE, evolution / DECK_PATCH_TILE)).r;
+  let cells = sampleNoise(vec3f(drawn / DECK_CELL_TILE, evolution / DECK_CELL_TILE));
   let detail = resolved(LUMP_SPACING, footprint);
   let lumps = (dot(sampleNoise(vec3f(x / LUMP_TILE, evolution / LUMP_TILE)).gba, DETAIL_WEIGHTS) - 0.5) * detail;
   let field = mix(patches, 0.5 * (cells.r + cells.g), DECK_CELLS) + ROLL_ROWS * rolls + LUMP_EDGES * lumps;
   // The field gathers about ½, so the cover is spread over its middle (FIELD_SPREAD), and the last
   // gaps close as the cover nears 1: the deck covers about u.deckCover of the sky, and all of it at 1.
   let threshold = mix(0.5 + FIELD_SPREAD, 0.5 - FIELD_SPREAD, u.deckCover) - smoothstep(0.8, 1.0, u.deckCover);
-  let past = field - threshold;
+  let body = saturate((field - threshold) / DECK_BODY);
+  let wisps = sampleNoise(vec3f(vec2f(across, along / DECK_WISP_STRETCH) / DECK_WISP_TILE, evolution / DECK_WISP_TILE)).b - 0.5;
+  let past = field - threshold - DECK_WISP_DEPTH * (1.0 - body) * wisps * resolved(DECK_WISP_SPACING, footprint);
   if (past <= 0.0) {
-    return 0.0;
+    return vec2f(0.0);
   }
-  let whole = DECK_RIM * saturate(past / DECK_EDGE) + (1.0 - DECK_RIM) * saturate(past / DECK_BODY);
-  return whole * (1.0 + ROLL_CONTRAST * rolls * cells.r + 2.0 * LUMP_CONTRAST * lumps);
+  let mottle = ROLL_CONTRAST * rolls + CELL_CONTRAST * 2.0 * (cells.g - 0.5) + LUMP_CONTRAST * 2.0 * lumps;
+  let heart = max(mix(HEART_EDGE, 1.0, saturate(past / DECK_BODY)) * (1.0 + mottle), THINNEST * body);
+  return vec2f(smoothstep(0.0, DECK_EDGE, past) * heart, heart);
 }
 
 // How far the base lies below its mean height, km: it sags where the column is deep.
 fn sag(column: f32) -> f32 {
-  return RELIEF * (column - DECK_MEAN_COLUMN);
+  return RELIEF * (column - 1.0);
 }
 
 // Optical depth of the deck above the planet-centred point `p` on its base.
 fn deckDepthAt(p: vec3f, footprint: f32) -> f32 {
-  return u.deckDepth * deckColumn(deckSpace(p, DECK_SPEED), footprint);
+  return u.deckDepth * deckColumn(deckSpace(p, DECK_SPEED), footprint).x;
 }
 
 // Radiance that cloud at the planet-centred point `q`, of optical depth `tau`, reflects down from
@@ -119,7 +144,7 @@ fn underlight(x: vec2f, q: vec3f, tau: f32, rise: f32) -> vec3f {
   // A path dipping at elevation −e from the base climbs back to its height 2R tan e away.
   let dip = max(-key.direction.y, 0.0) / across;
   let gap = x + toward * clamp(2.0 * u.bottomRadius * dip, UNDERLIGHT_REACH.x, UNDERLIGHT_REACH.y);
-  let open = 1.0 - saturate(deckColumn(gap, 1.0) / DECK_MEAN_COLUMN);
+  let open = 1.0 - saturate(deckColumn(gap, 1.0).x / THINNEST);
   let facing = (rise * across - key.direction.y) / sqrt(1.0 + rise * rise);
   if (facing <= 0.0 || open <= 0.0) {
     return vec3f(0.0);
@@ -132,7 +157,7 @@ fn underlight(x: vec2f, q: vec3f, tau: f32, rise: f32) -> vec3f {
 fn baseRise(x: vec2f, column: f32, footprint: f32) -> f32 {
   let step = 0.1;
   let toward = normalize(keyLight().direction.xz);
-  return (sag(column) - sag(deckColumn(x + toward * step, footprint))) / step;
+  return (sag(column) - sag(deckColumn(x + toward * step, footprint).x)) / step;
 }
 
 // rgb: radiance toward the eye; a: transmittance of what lies beyond: the deck, the scud beneath
@@ -148,17 +173,15 @@ fn deck(dir: vec3f, lighting: CloudLighting) -> vec4f {
   let mu = max(dir.y, DECK_VIEW_GRAZING);
   let lowLight = keyLight().direction.y < UNDERLIGHT_BELOW;
   var layer = vec4f(0.0, 0.0, 0.0, 1.0);
-  if (column > 0.0) {
-    let tau = u.deckDepth * column;
-    let glow = deckGlow(dir, hit.xyz, tau, lighting.sky);
-    var light = glow.rgb;
+  if (column.x > 0.0) {
+    let tau = u.deckDepth * column.x;
+    layer = deckVeil(dir, hit.xyz, tau, u.deckDepth * column.y, lighting.sky);
     if (lowLight) {
-      light += underlight(x, hit.xyz, tau, baseRise(x, column, hit.w * footprint));
+      layer += vec4f(underlight(x, hit.xyz, tau, baseRise(x, column.x, hit.w * footprint)), 0.0);
     }
-    layer = vec4f(light, exp(-tau / mu) + glow.a);
   }
   // The light under the deck, on average: what shines on the scud from above, and on the rain.
-  let deckMean = deckGlow(vec3f(0.0, 1.0, 0.0), hit.xyz, DECK_MEAN_COLUMN * u.deckDepth, lighting.sky);
+  let deckMean = deckGlow(vec3f(0.0, 1.0, 0.0), hit.xyz, u.deckDepth, lighting.sky);
   let under = mix(lighting.sky, deckMean.rgb + deckMean.a * lighting.sky, u.deckCover);
 
   // Scud: thin, so lit as a slab by the light under the deck above it and the grass below.
@@ -169,7 +192,7 @@ fn deck(dir: vec3f, lighting: CloudLighting) -> vec4f {
     let s = vec2f(dot(along, ROLL_ACROSS), dot(along, vec2f(-ROLL_ACROSS.y, ROLL_ACROSS.x)));
     let shreds = sampleNoise(vec3f(s / SCUD_TILE, 0.8 * u.cloudEvolution));
     let ragged = shreds.r - 0.5 * shreds.g * resolved(SCUD_TILE.y / 8.0, low.w * footprint);
-    let tauScud = SCUD_DEPTH * saturate((ragged - (1.0 - scudCover)) / DECK_EDGE);
+    let tauScud = SCUD_DEPTH * saturate((ragged - (1.0 - scudCover)) / SCUD_EDGE);
     if (tauScud > 0.0) {
       let reflected = slabReflectance(tauScud, 0.5);
       var scud = under * (max(1.0 - reflected - exp(-2.0 * tauScud), 0.0) + u.groundAlbedo * reflected);
