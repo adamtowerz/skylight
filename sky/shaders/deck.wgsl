@@ -107,11 +107,16 @@ const SCUD_FLANK = 0.3;
 // The deck's cells' tops, for the shade they cast on the heaps beside them: the tallest stand
 // this many times the deck's thickness above its base; the light's path past them is sampled at
 // these shares of the way to where it clears them (at least, and at most, DECK_SHADE_REACH km),
-// and a top this far above or below the path (km) shades it fully or not at all.
+// and a top this far above or below the path (km) shades it fully or not at all. Their shadows'
+// penumbrae widen by DECK_PENUMBRA km per km from the cell (light diffused through and around a
+// cell, not the sun's disc alone), and the deck's field changes by about DECK_FIELD_SLOPE per km
+// across a cell's edge.
 const DECK_TALLEST = 1.3;
 const DECK_SHADE_REACH = vec2f(1.0, 40.0);
 const DECK_SHADE_SAMPLES = array(0.1, 0.35, 0.8);
 const DECK_SHADE_SOFTNESS = 0.35;
+const DECK_PENUMBRA = 0.05;
+const DECK_FIELD_SLOPE = 1.0;
 // Rain's extinction, km⁻¹ at 1 mm/h, and how it grows with the rate: the Marshall–Palmer drops'
 // cross-section, less the half they only diffract forward (Atlas 1953).
 const RAIN_EXTINCTION = 0.18;
@@ -123,10 +128,9 @@ fn deckSpace(p: vec3f, speed: f32) -> vec2f {
   return p.xz - speed * u.cloudWind;
 }
 
-// The deck's column at `x` (deck space), as a share of its mean depth where whole: 0 in its gaps,
-// thinning toward their edges, rolled, celled and lumped by as much as a sample standing for
-// `footprint` km resolves (x); and the column it thins from, the depth of the cell at its heart (y).
-fn deckColumn(x: vec2f, footprint: f32) -> vec2f {
+// The deck's field at `x` (deck space) before its lumps: its patches, its cells drawn out along
+// the rolls, and the rows the rolls gather them into (x); the rolls (y) and the cells (z) alone.
+fn deckRows(x: vec2f) -> vec3f {
   let evolution = 0.3 * u.cloudEvolution;
   let across = dot(x, ROLL_ACROSS);
   let along = dot(x, vec2f(-ROLL_ACROSS.y, ROLL_ACROSS.x));
@@ -137,22 +141,36 @@ fn deckColumn(x: vec2f, footprint: f32) -> vec2f {
   let drawn = vec2f(across, along / ROLL_STRETCH);
   let patches = sampleNoise(vec3f(x / DECK_PATCH_TILE, evolution / DECK_PATCH_TILE)).r;
   let cells = sampleNoise(vec3f(drawn / DECK_CELL_TILE, evolution / DECK_CELL_TILE));
+  return vec3f(mix(patches, 0.5 * (cells.r + cells.g), DECK_CELLS) + ROLL_ROWS * mix(0.2, 1.6, strength) * rolls, rolls, cells.g);
+}
+
+// The field past which the deck is cloud. The field gathers about ½, so the cover is spread over
+// its middle (FIELD_SPREAD), and the last gaps close as the cover nears 1: the deck covers about
+// u.deckCover of the sky, and all of it at 1. Its fringes start a quarter of the way out across
+// their veil, so that they still fill about as much sky as they hide.
+fn deckThreshold() -> f32 {
+  return mix(0.5 + FIELD_SPREAD, 0.5 - FIELD_SPREAD, u.deckCover) - smoothstep(0.8, 1.0, u.deckCover) - 0.25 * DECK_EDGE;
+}
+
+// The deck's column at `x` (deck space), as a share of its mean depth where whole: 0 in its gaps,
+// thinning toward their edges, rolled, celled and lumped by as much as a sample standing for
+// `footprint` km resolves (x); and the column it thins from, the depth of the cell at its heart (y).
+fn deckColumn(x: vec2f, footprint: f32) -> vec2f {
+  let evolution = 0.3 * u.cloudEvolution;
+  let across = dot(x, ROLL_ACROSS);
+  let along = dot(x, vec2f(-ROLL_ACROSS.y, ROLL_ACROSS.x));
+  let rows = deckRows(x);
   let detail = resolved(LUMP_SPACING, footprint);
   let lumps = (dot(sampleNoise(vec3f(x / LUMP_TILE, evolution / LUMP_TILE)).gba, DETAIL_WEIGHTS) - 0.5) * detail;
-  let field = mix(patches, 0.5 * (cells.r + cells.g), DECK_CELLS) + ROLL_ROWS * mix(0.2, 1.6, strength) * rolls + LUMP_EDGES * lumps;
-  // The field gathers about ½, so the cover is spread over its middle (FIELD_SPREAD), and the last
-  // gaps close as the cover nears 1: the deck covers about u.deckCover of the sky, and all of it at 1.
-  // Its fringes start a quarter of the way out across their veil, so that they still fill about
-  // as much sky as they hide.
-  let threshold = mix(0.5 + FIELD_SPREAD, 0.5 - FIELD_SPREAD, u.deckCover) - smoothstep(0.8, 1.0, u.deckCover)
-    - 0.25 * DECK_EDGE;
+  let field = rows.x + LUMP_EDGES * lumps;
+  let threshold = deckThreshold();
   let body = saturate((field - threshold) / DECK_BODY);
   let wisps = sampleNoise(vec3f(vec2f(across, along / DECK_WISP_STRETCH) / DECK_WISP_TILE, evolution / DECK_WISP_TILE)).b - 0.5;
   let past = field - threshold - DECK_WISP_DEPTH * (1.0 - body) * wisps * resolved(DECK_WISP_SPACING, footprint);
   if (past <= 0.0) {
     return vec2f(0.0);
   }
-  let mottle = ROLL_CONTRAST * rolls + CELL_CONTRAST * 2.0 * (cells.g - 0.5) + LUMP_CONTRAST * 2.0 * lumps;
+  let mottle = ROLL_CONTRAST * rows.y + CELL_CONTRAST * 2.0 * (rows.z - 0.5) + LUMP_CONTRAST * 2.0 * lumps;
   let heart = max(mix(HEART_EDGE, 1.0, saturate(past / DECK_BODY)) * (1.0 + mottle), THINNEST * body);
   return vec2f(pow(saturate(past / DECK_EDGE), FRINGE) * heart, heart);
 }
@@ -169,7 +187,11 @@ fn deckDepthAt(p: vec3f, footprint: f32) -> f32 {
 
 // How much of the key light reaches the planet-centred point `p` past the deck's cells, which
 // stand as tall above its base as they are deep: a heap beside the deck, its base among the
-// cells' tops, is shaded by those between it and a low light, and lit through the gaps.
+// cells' tops, is shaded by those between it and a low light, and lit through the gaps. A cell's
+// shadow is soft, with a penumbra that widens with the way from the cell to the heap: not the
+// sun's 0.53° disc but the much wider spread of light diffused through the cell's thin edges and
+// scattered in around them. So each cell is taken as blurred over that width, its field's edge
+// and its top's height softened alike, which also leaves out its lumps and wisps.
 fn deckShade(p: vec3f) -> f32 {
   let key = keyLight();
   let height = length(p) - u.bottomRadius;
@@ -182,12 +204,20 @@ fn deckShade(p: vec3f) -> f32 {
   }
   let reach = clamp((tallest - height) / max(climb, 1e-3), DECK_SHADE_REACH.x, DECK_SHADE_REACH.y);
   let x = deckSpace(p, DECK_SPEED);
+  let threshold = deckThreshold();
   var lit = 1.0;
   for (var i = 0; i < 3; i++) {
     let d = reach * DECK_SHADE_SAMPLES[i];
     let ray = height + (climb + 0.5 * d / u.bottomRadius) * d;
-    let top = u.deckBase + DECK_THICKNESS * deckColumn(x + toward * d, max(0.2 * d, 1.0)).x;
-    lit *= 1.0 - smoothstep(-DECK_SHADE_SOFTNESS, DECK_SHADE_SOFTNESS, top - ray);
+    let penumbra = DECK_PENUMBRA * d;
+    let blur = DECK_FIELD_SLOPE * penumbra;
+    let rows = deckRows(x + toward * d);
+    let past = rows.x - threshold;
+    let mottle = ROLL_CONTRAST * rows.y + CELL_CONTRAST * 2.0 * (rows.z - 0.5);
+    let heart = mix(HEART_EDGE, 1.0, saturate(past / (DECK_BODY + blur))) * (1.0 + mottle);
+    let column = smoothstep(-0.5 * blur, DECK_EDGE + 0.5 * blur, past) * heart;
+    let softness = DECK_SHADE_SOFTNESS + penumbra;
+    lit *= 1.0 - smoothstep(-softness, softness, u.deckBase + DECK_THICKNESS * column - ray);
   }
   return lit;
 }

@@ -203,8 +203,9 @@ inversion: as it closes in the heaps stop towering, stay lower and spread out, t
 gradually to their edges, and grow fewer and thinner, so a broken deck still has heaps in its gaps
 and only a nearly whole one has none. Its cells stand about as tall above the base as they are
 deep, and beside them the heaps' lower flanks and bases lie among their tops: under a low sun the
-cells between a heap and the light shade it in patches, lit through the gaps, while the light it
-scatters many times still comes down from its crown where that stands in the sun. The
+cells between a heap and the light shade it in soft patches, lit through the gaps, each shadow's
+penumbra widening with its way from the cell (light diffused through and around the cell, far
+wider than the sun's disc), while the light it scatters many times still comes down from its crown where that stands in the sun. The
 deck hides whatever lies above it through the scene's alpha (heaps, mackerel sky, cirrus, moon and
 stars), its optical depth joins the cumulus in the shadow map, so a whole deck shades the light
 shafts away, and the exposure meters the sky through it and opens up as it veils the view, so a
