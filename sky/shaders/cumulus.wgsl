@@ -12,10 +12,11 @@
 // heaps have soft volume yet shade their own bases and crevices. Each step is lit by a short march
 // toward the key light and one up through the column above it, with multiple scattering after
 // Wrenninge et al. 2013 that comes in along whichever way brings more: along the light, or diffused
-// down from the sunlit crown (Bohren 1987). So under a low sun the flanks facing it blaze and the
-// bases beneath thick heaps sink into their own shade, and skylight and grass light fade with
-// depth into the heap too: shaded sides turn sky-blue, and thick cores go dark enough to stand out
-// against the night.
+// down from the sunlit crown (Bohren 1987) and in from the sunlit flanks, dying away across the
+// heap as a slab's diffusion mode does. So under a low sun the flanks facing it blaze, the bases
+// beneath flat heaps sink into their own shade and those of tall banks glow a dim gold far in from
+// the flanks, and skylight and grass light fade with depth into the heap too: shaded sides turn
+// sky-blue, and thick cores go dark enough to stand out against the night.
 
 // Horizontal extent of one tile of the noise volume, km: the heaps, their detail, the weather.
 const SHAPE_TILE = 5.0;
@@ -108,10 +109,12 @@ const OCTAVE_REACH = 0.35;
 const GRAZING_OCTAVE_REACH = 0.5;
 const GRAZING = vec2f(0.05, 0.5);
 // The light a heap's crown catches per area of the column below it: all of a light overhead, but
-// of a grazing one only what falls on the crown's sunward slopes (the flanks' share comes in along
-// the light instead). So under a low sun the bases, lit only through the crowns, sink into their
-// own shade while the flanks facing the sun blaze.
+// of a grazing one only what falls on the crown's sunward slopes; the rest falls on the flanks
+// facing it, which blaze, and diffuses in from them (flankGlow).
 const GRAZING_CROWN = 0.15;
+// How far past a cloud's face diffused light behaves as if the cloud went on, in optical depth:
+// two thirds of a transport mean free path, 2 / (3(1 − g)).
+const EXTRAPOLATION = 2.0 / (3.0 * (1.0 - FORWARD));
 // Beer–powder (Schneider 2015): light must scatter in a while before it can come back out, so
 // sun-facing edges seen from the shadowed side are darker than Beer's law alone says.
 const POWDER = 0.6;
@@ -119,7 +122,7 @@ const POWDER = 0.6;
 // tints shaded sides and bases blue in daylight, and it reaches only as far in as the shortest way
 // out, toward the light or up through the column: edges take all of it, a broad heap's core little.
 const SIDE_SKYLIGHT = 0.5;
-const OPEN_SIDES = 0.3; // the share of it that even a core sees, through the heap's ragged sides
+const OPEN_SIDES = 0.15; // the share of it that even a core sees, through the heap's ragged sides
 // Optical depth toward the key light over which a sample passes from the lit side of the cloud,
 // which sees the whole sky, to the shaded side, which sees only the half turned from the light.
 const SHADE_DEPTH = 8.0;
@@ -314,15 +317,10 @@ fn opticalDepthAbove(h: f32, field: f32, weather: Weather) -> f32 {
   return density * weather.density * height * (u.cloudTop - u.cloudBottom) * EXTINCTION * u.cloudDensity;
 }
 
-// How much diffuse light reaches a sample through the cloud around it, from above (x: the sky,
-// through the column `above`) and from below (y: the grass, through its height over the base at
-// the sample's own `extinction`). Two-stream diffuse transmission, 1 / (1 + ¾(1 − g)τ) (Bohren
-// 1987): edges see nearly all of it, a thick heap's core very little, which is what lets clouds
-// read darker than the sky behind them.
-fn ambientReach(h: f32, above: f32, extinction: f32) -> vec2f {
-  return diffuseTransmission(vec2f(above, extinction * h * (u.cloudTop - u.cloudBottom)));
-}
-
+// How much diffuse light reaches a sample through cloud of optical depth τ, such as skylight down
+// through the column above it and grass light up through its height over the base. Two-stream
+// diffuse transmission, 1 / (1 + ¾(1 − g)τ) (Bohren 1987): edges see nearly all of it, a thick
+// heap's core very little, which is what lets clouds read darker than the sky behind them.
 fn diffuseTransmission(opticalDepth: vec2f) -> vec2f {
   return 1.0 / (1.0 + 0.75 * (1.0 - FORWARD) * opticalDepth);
 }
@@ -366,7 +364,17 @@ fn crownGlow(above: f32, catches: f32, shade: f32, phase: f32) -> f32 {
   return catches * shade * diffuseTransmission(vec2f(above)).x * phase;
 }
 
-// The octaves' summed phase past the first, for crownGlow.
+// Light diffused in sideways from the sunlit flanks, per unit illuminance: the rest of a grazing
+// light (`catches` falls on the crown), past anything else in its way (`shade`). Diffusing across
+// a slab, it leaks out through the base and the top as it goes, so it dies away as the slab's
+// fundamental mode, e^(−π x / (T + 2 z₀)) over optical depth x into a slab T deep (z₀ the
+// extrapolation length): under the low crown of a flat heap within a few hundred metres, but deep
+// into the base of a tall bank, which glows a dim gold far in from the flanks facing the sun.
+fn flankGlow(toLight: f32, column: f32, catches: f32, shade: f32, phase: f32) -> f32 {
+  return (1.0 - catches) * shade * exp(-PI * toLight / (column + 2.0 * EXTRAPOLATION)) * phase;
+}
+
+// The octaves' summed phase past the first, for crownGlow and flankGlow.
 fn diffusedPhase(cosTheta: f32) -> f32 {
   var result = 0.0;
   var energy = 1.0;
@@ -452,11 +460,13 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
     }
     let above = opticalDepthAbove(h, mix(before, field, saturate((lit - t + span) / max(span, 1e-6))), weather);
     // Light diffused many times takes whichever way in brings more: along the light, or down from
-    // the crown.
-    let direct = keyLight * max(scattering(lightDepth, cosTheta, octaveReach, shade), crownGlow(above, catches, shade.y, phase));
+    // the crown and in from the flanks.
+    let below = extinction * h * (u.cloudTop - u.cloudBottom); // optical depth down to the base
+    let diffused = crownGlow(above, catches, shade.y, phase) + flankGlow(lightDepth, above + below, catches, shade.x, phase);
+    let direct = keyLight * max(scattering(lightDepth, cosTheta, octaveReach, shade), diffused);
     // Ambient: skylight from above and grass light from below, blended by height and each dimmed
     // by the cloud it diffuses through, plus skylight from the sides.
-    let reach = ambientReach(h, above, extinction);
+    let reach = diffuseTransmission(vec2f(above, below));
     let sky = mix(lighting.sky, lighting.shadedSky, 1.0 - exp(-lightDepth / SHADE_DEPTH));
     let side = sky * mix(diffuseTransmission(vec2f(min(lightDepth, above))).x, 1.0, OPEN_SIDES);
     let ambient = mix(mix(lighting.ground * reach.y, sky * reach.x, sqrt(h)), side, SIDE_SKYLIGHT);

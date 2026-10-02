@@ -95,10 +95,12 @@ multiple-scattering octaves after Wrenninge et al. 2013. Light scattered many ti
 whichever way brings more: along the light, or diffused down from the sunlit crown through the
 column above the sample (a second, three-step march), carried by two-stream diffusion (Bohren 1987)
 and weighted by how much of the light the crown catches, which under a grazing sun is little.
-Diffused light also reaches less far sideways than down, leaking out through the flat base it runs
-along. So at golden hour the flanks and turrets facing the sun blaze while the bases of thick
-heaps sink into their own shade, darker under the deep cores, lighter under thin edges: the heaps
-have form instead of one even glow. Ambient light is the sky-view LUT, with shaded sides seeing
+The rest of a grazing sun falls on the flanks facing it and diffuses in sideways from them, leaking
+out through the base and the top as it goes, so it dies away as a slab's fundamental diffusion
+mode, over about the heap's own depth. So at golden hour the flanks and turrets facing the sun
+blaze while the bases of flat heaps sink into their own shade, and those of tall banks, which the
+light crosses far before it leaks away, glow a dim gold deep in: the heaps have form instead of
+one even glow, and their cores stay warm instead of turning grey. Ambient light is the sky-view LUT, with shaded sides seeing
 only the half of the sky turned from the sun (blue shadows at noon, violet at dusk), and grass
 bounce from below, both dimmed by the cloud they diffuse through, the skylight from above by the
 column the second march measures. At night the moon lights them, and they stand dark against the
