@@ -9,15 +9,18 @@ import { celestial } from './celestial'
 import { createClock } from './clock'
 import { bindControls, readParams } from './controls'
 import type { EdgeColors } from './edges'
+import { trackEyeDrops } from './eyedrops'
 import { acquireGpu, observeCanvasSize, type Gpu } from './gpu'
+import { gusts } from './gusts'
 import { trackHistory } from './history'
 import { runLoop } from './loop'
 import { smoothstep, type Vec2, type Vec3 } from './math'
 import { moodCycle } from './moods'
+import { trackRainfall } from './rainfall'
 import { createRenderer, type Renderer } from './renderer'
 import { openingMoment } from './seeds'
 import { fillUniforms, Uniforms } from './uniforms'
-import { weatherAt } from './weather'
+import { rainRate, weatherAt } from './weather'
 
 /** How long the eyes take to open once the first frame is ready. */
 const revealSeconds = 3.5
@@ -63,6 +66,8 @@ function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onL
   const moodAt = moodCycle(opening.hours, opening.mood)
   const camera = createCamera(matchMedia('(prefers-reduced-motion: reduce)').matches)
   const history = trackHistory()
+  const rainfall = trackRainfall()
+  const eyeDrops = trackEyeDrops()
   const uniforms = Uniforms.create()
 
   let resolution: Vec2 | undefined
@@ -89,6 +94,9 @@ function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onL
     camera.update(dt, time)
     revealStart ??= time
     const view = camera.basis(outputResolution[0] / outputResolution[1])
+    const weather = weatherAt(clock.hours, params.weather)
+    const wind = gusts(time, weather.storm)
+    const rate = rainRate(weather) * wind.rainGust
 
     fillUniforms(uniforms, {
       resolution,
@@ -99,11 +107,12 @@ function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onL
       reveal: smoothstep(0, revealSeconds, time - revealStart),
       blankColor,
       hours: clock.hours,
-      weather: weatherAt(clock.hours, params.weather),
+      weather,
       camera: view,
       history: history.next(view, clock.hours),
       sky,
       mood: moodAt(clock.hours),
+      rain: { ...wind, ...rainfall.advance(dt, rate), eyeDrops: eyeDrops.advance(dt, time, rate) },
     })
     renderer.render(uniforms.data)
   })

@@ -15,7 +15,10 @@ const layouts = {
   mat4x4f: { align: 16, size: 64 },
 } as const
 
-export type FieldType = keyof typeof layouts
+/** A fixed-size array of vec4f, e.g. `array<vec4f, 6>`: 16 bytes an element, as uniforms require. */
+type Vec4Array = `array<vec4f, ${number}>`
+
+export type FieldType = keyof typeof layouts | Vec4Array
 
 interface FieldValues {
   f32: number
@@ -25,9 +28,18 @@ interface FieldValues {
   mat4x4f: Mat4
 }
 
+/** Its elements, flattened: four floats each. */
+type FieldValue<T extends FieldType> = T extends keyof FieldValues ? FieldValues[T] : readonly number[]
+
 export type Schema = Record<string, FieldType>
 
-export type StructValues<S extends Schema> = { [K in keyof S]: FieldValues[S[K]] }
+export type StructValues<S extends Schema> = { [K in keyof S]: FieldValue<S[K]> }
+
+function layoutOf(type: FieldType) {
+  if (type in layouts) return layouts[type as keyof typeof layouts]
+  const length = Number(/^array<vec4f, (\d+)>$/.exec(type)?.[1])
+  return { align: 16, size: 16 * length }
+}
 
 export interface StructWriter<S extends Schema> {
   /** Backing store, ready for `queue.writeBuffer`. */
@@ -50,9 +62,10 @@ export function struct<const S extends Schema>(name: string, schema: S): Struct<
   const offsets = new Map<string, number>()
   let end = 0
   for (const [field, type] of Object.entries(schema)) {
-    const offset = roundUp(end, layouts[type].align)
+    const { align, size } = layoutOf(type)
+    const offset = roundUp(end, align)
     offsets.set(field, offset)
-    end = offset + layouts[type].size
+    end = offset + size
   }
   const size = roundUp(end, 16)
 

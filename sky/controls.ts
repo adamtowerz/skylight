@@ -1,14 +1,14 @@
 /**
  * Invisible controls. URL parameters set the scene up (`?hour=18.4&speed=0&mood=2`, or
  * `?seed=3` for one of the opening moments), and any kind of weather can be held at a value over
- * the timeline (`?fog=0.8&haze=0.5`, each 0 → 1); scrolling (or dragging on touch screens) winds
+ * the timeline (`?fog=0.8&haze=0.5&storm=1`, each 0 → 1); scrolling (or dragging on touch screens) winds
  * time back and forth, ←/→ nudge it by a quarter hour, space pauses, and the pointer adds a
  * touch of parallax.
  */
 
 import type { Camera } from './camera'
 import type { Clock } from './clock'
-import { weatherKinds, type Weather } from './weather'
+import { weatherKinds, type HeldWeather } from './weather'
 
 const nudgeHours = 0.25
 /** Natural seconds of clock per pixel scrolled: a wheel notch is a few minutes at dusk, a swipe an hour. */
@@ -22,7 +22,7 @@ export interface Params {
   mood?: number
   seed?: number
   /** Weather held at these values whatever the timeline says. */
-  weather: Partial<Weather>
+  weather: HeldWeather
 }
 
 function numberParam(search: URLSearchParams, name: string) {
@@ -33,7 +33,7 @@ function numberParam(search: URLSearchParams, name: string) {
 
 /** Every kind of weather given a value, e.g. `?fog=0.8`. */
 function heldWeather(search: URLSearchParams) {
-  const held: Partial<Weather> = {}
+  const held: HeldWeather = {}
   for (const kind of weatherKinds) {
     const value = numberParam(search, kind)
     if (value !== undefined) held[kind] = value

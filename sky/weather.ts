@@ -15,12 +15,18 @@
  * kinds are drawn (and any held by `?name=`): rain falls only from a thick deck, and a deck, by
  * keeping the ground from cooling under a clear sky, allows no radiation fog.
  *
+ * Thunderstorms are drawn by the day instead (`stormOf`): about one warm afternoon or evening in
+ * eleven brings one, an hour to three of it. It is not a spell everywhere at once but a thing that
+ * passes: its deck, its core and their edges ride in on the wind, so it is a field across the sky
+ * (`storm.wgsl`), and what the eye lies under is that field where it lies. It closes the deck in
+ * ahead of it, rains lightly as it comes and goes, and pours under its core.
+ *
  * Adding a kind: give it a field in `Weather` and, if it is independent, an entry in `kinds` with
  * its own salt, chosen so the opening seeds (`seeds.ts`) keep their skies. Its uniforms go in
  * `weatherUniforms`, and `?name=` holds it for free (`controls.ts`).
  */
 
-import { lerp, smoothstep } from './math'
+import { lerp, smoothstep, type Vec4 } from './math'
 import type { Mood } from './moods'
 import type { UniformValues } from './uniforms'
 
@@ -34,12 +40,20 @@ export interface Weather {
   haze: number
   /** A low grey deck of stratus and nimbostratus: 0.4 broken, with gaps; 1 the whole sky. */
   deck: number
-  /** Rain from the deck: 1 is light rain (`lightRain` mm/h); heavier rain can take it further. */
+  /** Light rain from the deck: 1 is `lightRain` mm/h, the lead-in and the tail of a storm. */
   precipitation: number
+  /** A thunderstorm's core overhead: 1 its heaviest, a torrent under a nimbostratus base. */
+  storm: number
+  /** The storm as a field across the sky, which the eye sees pass. */
+  front: StormFront
 }
 
+/** The kinds of weather, each 0 → 1, that `?name=` can hold. */
+export type WeatherKind = Exclude<keyof Weather, 'front'>
+export type HeldWeather = Partial<Record<WeatherKind, number>>
+
 /** The kinds drawn on their own; the rest follow from them. */
-type Independent = Exclude<keyof Weather, 'precipitation'>
+type Independent = Exclude<WeatherKind, 'precipitation' | 'storm'>
 
 interface Kind {
   /** Hours from one spell to the next. */
@@ -108,7 +122,92 @@ const showers: Kind = {
 /** How thick the deck must be before it rains: only nimbostratus rains, not a broken stratocumulus. */
 const rainingDeck = { from: 0.6, to: 0.9 }
 
-export const weatherKinds: readonly (keyof Weather)[] = [...(Object.keys(kinds) as Independent[]), 'precipitation']
+export const weatherKinds: readonly WeatherKind[] = [...(Object.keys(kinds) as Independent[]), 'precipitation', 'storm']
+
+/**
+ * Thunderstorms grow out of the heat of the day: on about one day in eleven (`chance`) one
+ * passes, its core arriving between `arrives` o'clock, lasting `lasts` hours and as fierce as
+ * `peak`. Which days, and when, are hashed from the day with `salt`, chosen so that no opening
+ * seed's day brings one.
+ */
+const storms = { salt: 27, chance: 0.09, arrives: [15.5, 19.5], lasts: [1, 3], peak: [0.7, 1] } as const
+/**
+ * How a storm passes, in hours from its core's arrival (`a`) and departure (`d`): the deck closes in
+ * ahead of it and breaks up behind it; light rain leads in and trails off; the core comes in
+ * abruptly behind its gust front and eases off.
+ */
+const stormDeck = { closes: [-1.3, -0.6], breaks: [0.3, 1.0] } as const
+const stormDrizzle = { starts: [-0.45, -0.1], stops: [-0.1, 0.5] } as const
+const stormCore = { arrives: [-0.15, 0], leaves: [-0.25, 0.15] } as const
+/**
+ * How fast the storm crosses the sky, km per simulated hour. The clock is a time-lapse, so this is
+ * not the storm's speed over the ground but the pace at which its edges sweep over the low deck,
+ * slow enough to see the shelf roll overhead.
+ */
+const stormSweep = 3
+
+/**
+ * Where the storm's core and the deck it brings begin and end along the wind, km upwind of the eye
+ * (each a window: in from x to y, out from z to w; `storm.wgsl`), and how fierce it is at its heart.
+ */
+interface StormFront {
+  peak: number
+  core: Vec4
+  deck: Vec4
+  /** The deck's cover away from the storm: the weather's own. */
+  around: number
+}
+
+interface Storm {
+  arrives: number
+  leaves: number
+  peak: number
+}
+
+/** The storm of day `day`, if it brings one, in hours since midnight of day zero. */
+function stormOf(day: number): Storm | undefined {
+  const { salt, chance, arrives, lasts, peak } = storms
+  if (draw(4 * day, salt) >= chance) return undefined
+  const arrival = 24 * day + lerp(arrives[0], arrives[1], draw(4 * day + 1, salt))
+  return {
+    arrives: arrival,
+    leaves: arrival + lerp(lasts[0], lasts[1], draw(4 * day + 2, salt)),
+    peak: lerp(peak[0], peak[1], draw(4 * day + 3, salt)),
+  }
+}
+
+/** A window over time: it opens over `in`, hours from the storm's arrival, and closes over `out`, hours from its departure. */
+type Window = { in: readonly [number, number]; out: readonly [number, number] }
+
+/** A window's edges as km upwind of the eye at `hours`, for the GPU. */
+function edges(storm: Storm, { in: rise, out: fall }: Window, hours: number): Vec4 {
+  const km = (hour: number) => (hour - hours) * stormSweep
+  return [km(storm.arrives + rise[0]), km(storm.arrives + rise[1]), km(storm.leaves + fall[0]), km(storm.leaves + fall[1])]
+}
+
+/** How far a window, given as km edges, is open at `x` km upwind. */
+const open = ([a, b, c, d]: Vec4, x: number) => smoothstep(a, b, x) * (1 - smoothstep(c, d, x))
+
+const always: Vec4 = [-1e5, -1e5 + 1, 1e5, 1e5 + 1]
+const windows = {
+  core: { in: stormCore.arrives, out: stormCore.leaves },
+  deck: { in: stormDeck.closes, out: stormDeck.breaks },
+  drizzle: { in: stormDrizzle.starts, out: stormDrizzle.stops },
+} as const
+
+/**
+ * The storm passing at `hours`, or held at `held` all over the sky: its field (`front`), and at
+ * the eye its core, the deck it brings and its light rain.
+ */
+function stormAt(hours: number, held?: number) {
+  const storm = held === undefined ? stormOf(Math.floor(hours / 24)) : undefined
+  const front = storm
+    ? { peak: storm.peak, core: edges(storm, windows.core, hours), deck: edges(storm, windows.deck, hours) }
+    : { peak: held ?? 0, core: always, deck: always }
+  const drizzle = storm ? open(edges(storm, windows.drizzle, hours), 0) : 1
+  const brings = smoothstep(0, 0.2, front.peak)
+  return { front, core: front.peak * open(front.core, 0), deck: brings * open(front.deck, 0), drizzle: brings * drizzle }
+}
 
 /** A random number in [0, 1) per spell (a murmur3-style integer mix). */
 function draw(spell: number, salt: number) {
@@ -129,15 +228,19 @@ function presence({ spellHours, salt, forms, whole, daily }: Kind, hours: number
  * The weather at `hours` (simulated, since midnight of day zero), with any kinds `held` at a
  * value whatever the timeline says; the kinds that follow from others follow the held ones too.
  */
-export function weatherAt(hours: number, held: Partial<Weather> = {}): Weather {
-  const deck = held.deck ?? presence(kinds.deck, hours)
+export function weatherAt(hours: number, held: HeldWeather = {}): Weather {
+  const storm = stormAt(hours, held.storm)
+  const around = held.deck ?? presence(kinds.deck, hours)
+  const deck = Math.max(around, storm.deck)
+  const showering = presence(showers, hours) * smoothstep(rainingDeck.from, rainingDeck.to, deck)
   return {
     altocumulus: held.altocumulus ?? presence(kinds.altocumulus, hours),
     fog: held.fog ?? presence(kinds.fog, hours) * (1 - deck),
     haze: held.haze ?? presence(kinds.haze, hours),
     deck,
-    precipitation:
-      held.precipitation ?? presence(showers, hours) * smoothstep(rainingDeck.from, rainingDeck.to, deck),
+    precipitation: held.precipitation ?? Math.max(showering, storm.drizzle),
+    storm: storm.core,
+    front: { ...storm.front, around },
   }
 }
 
@@ -180,16 +283,32 @@ const deckBase = { broken: 1.2, whole: 0.6 } // km
 const deckDepth = { broken: 17, whole: 42 }
 /** Light rain, mm/h: what `precipitation` 1 brings (light rain is up to 2.5 mm/h). */
 const lightRain = 2
+/**
+ * A storm's core: a nimbostratus base far deeper than a rainy day's (optical depth about 250, the
+ * depth of a cumulonimbus), lower by up to `stormLowers` km, pouring rain up to `heavyRain` mm/h
+ * at its fiercest (a torrential downpour), as the square of how fierce: a weak storm only rains hard.
+ */
+const stormDepth = 250
+const stormLowers = 0.15
+const heavyRain = 45
+
+/** Rain at the eye, mm/h, before the gusts. */
+export const rainRate = ({ precipitation, storm }: Weather) => lightRain * precipitation + heavyRain * storm * storm
 
 /** The weather's uniforms, besides what goes into the mood's air (`weathered`). */
-export function weatherUniforms({ altocumulus, fog, deck, precipitation }: Weather): Partial<UniformValues> {
+export function weatherUniforms({ altocumulus, fog, deck, precipitation, storm, front }: Weather): Partial<UniformValues> {
   return {
     altocumulusPresence: altocumulus,
     fogDepth: lerp(fogDepth.thin, fogDepth.thick, fog),
     fogExtinction: thickFogExtinction * fog ** 0.7,
-    deckCover: deck,
-    deckBase: lerp(deckBase.broken, deckBase.whole, deck),
+    deckCover: front.around,
+    deckBase: lerp(deckBase.broken, deckBase.whole, deck) - stormLowers * storm,
     deckDepth: lerp(deckDepth.broken, deckDepth.whole, deck),
     rainRate: lightRain * precipitation,
+    stormPeak: front.peak,
+    stormCore: front.core,
+    stormDeck: front.deck,
+    stormDepth,
+    stormRain: heavyRain * front.peak * front.peak,
   }
 }

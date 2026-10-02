@@ -181,7 +181,11 @@ struct Weather {
 fn weatherAt(position: vec3f) -> Weather {
   let weather = sampleNoise(vec3f(position.xz, 0.5 * u.cloudEvolution) / WEATHER_TILE);
   let open = saturate(u.cloudCoverage + (weather.r - 0.5) * WEATHER_CONTRAST);
-  let capped = saturate(u.deckCover / DECK_CAPS_HEAPS);
+  var deckCover = u.deckCover;
+  if (stormAbout()) {
+    deckCover = deckCoverAt(position.xz + u.cloudWind);
+  }
+  let capped = saturate(deckCover / DECK_CAPS_HEAPS);
   let suppressed = capped * capped * capped;
   let cover = open * (1.0 - suppressed);
   let towering = u.cloudTowers * smoothstep(TOWER_CELLS.x, TOWER_CELLS.y, weather.g) * (1.0 - capped);
@@ -454,7 +458,7 @@ fn cumulus(dir: vec3f, jitter: f32, lighting: CloudLighting) -> vec4f {
     // light diffused many times comes down from the heap's crown, which may stand in the sun above
     // them: shaded flanks and bases still glow, lit ones blaze.
     var shade = vec2f(1.0);
-    if (u.deckCover > 0.0) {
+    if (deckAbout()) {
       let crown = q * (1.0 + max(weather.top - h, 0.0) * (u.cloudTop - u.cloudBottom) / length(q));
       shade = vec2f(deckShade(q), deckShade(crown));
     }

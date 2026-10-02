@@ -18,6 +18,7 @@ import deck from '../shaders/deck.wgsl'
 import decklight from '../shaders/decklight.wgsl'
 import keylight from '../shaders/keylight.wgsl'
 import slab from '../shaders/slab.wgsl'
+import storm from '../shaders/storm.wgsl'
 import { shader } from '../shader'
 import { uniformsWgsl } from '../uniforms'
 import { lutEntries } from './atmosphere'
@@ -47,6 +48,7 @@ export async function createCloudLayerPass(
     keylight,
     clouds,
     cumulus,
+    storm,
     slab,
     decklight,
     deck,

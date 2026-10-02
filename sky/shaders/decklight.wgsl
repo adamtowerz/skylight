@@ -79,14 +79,16 @@ fn deckVeil(dir: vec3f, base: vec3f, tau: f32, body: f32, sky: vec3f) -> vec4f {
 }
 
 // The view along `dir` of `behind` (the sky and clouds beyond) through the deck on average,
-// without its texture (its mean column over the share of the sky it covers): rgb the radiance, a
-// the share of `behind` that shows.
+// without its texture (its mean column over the share of the sky it covers there, and deeper
+// under a storm): rgb the radiance, a the share of `behind` that shows.
 fn overcast(dir: vec3f, behind: vec3f, sky: vec3f) -> vec4f {
-  if (u.deckCover <= 0.0) {
+  if (!deckAbout()) {
     return vec4f(behind, 1.0);
   }
-  let tau = u.deckDepth;
-  let glow = deckGlow(dir, onLayer(dir, u.deckBase).xyz, tau, sky);
-  let through = mix(1.0, exp(-tau / max(dir.y, DECK_VIEW_GRAZING)) + glow.a, u.deckCover);
-  return vec4f(u.deckCover * glow.rgb + through * behind, through);
+  let base = onLayer(dir, u.deckBase).xyz;
+  let tau = deckDepthOver(base.xz);
+  let cover = deckCoverAt(base.xz);
+  let glow = deckGlow(dir, base, tau, sky);
+  let through = mix(1.0, exp(-tau / max(dir.y, DECK_VIEW_GRAZING)) + glow.a, cover);
+  return vec4f(cover * glow.rgb + through * behind, through);
 }

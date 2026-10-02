@@ -20,6 +20,10 @@ const ADAPTATION = 1.5;
 // Fog, like snow, is a high-key scene that a meter would render grey: as a photographer exposing
 // for it would, open up by as many stops as it (or an overcast deck) veils the view.
 const HIGH_KEY = 0.8;
+// A storm is the opposite, a low-key scene, and the eye under it does not adapt all the way to
+// the gloom: under its heart, expose this many stops darker than the meter would and do not open
+// up, so it feels as dark as it is rather than a grey day turned down.
+const LOW_KEY = 1.2;
 
 // Per sample: log2 of its luminance and how far fog or the deck veils it; and the dome's radiance.
 var<workgroup> metered: array<vec2f, SAMPLES>;
@@ -75,7 +79,8 @@ fn main(@builtin(local_invocation_id) id: vec3u, @builtin(local_invocation_index
       whole += dome[column];
     }
     let average = metered[0] / f32(SAMPLES);
-    let desired = log2(KEY) - COMPRESSION * average.x + HIGH_KEY * average.y;
+    let gloom = stormCoreAt(vec2f(0.0));
+    let desired = log2(KEY) - COMPRESSION * average.x + HIGH_KEY * average.y * (1.0 - gloom) - LOW_KEY * gloom;
     // The buffer starts zeroed: take the first frame's exposure as is.
     let previous = exposure.value;
     let adapted = select(desired, mix(log2(previous), desired, 1.0 - exp(-ADAPTATION * u.dt)), previous > 0.0);

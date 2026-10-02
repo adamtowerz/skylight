@@ -1,19 +1,21 @@
 /**
- * From HDR radiance to the screen: upsample, add the stars and the rain at the display's own resolution,
- * expose, vignette, tonemap, grade, paper, grain, dither, and the eyes-opening reveal from the
- * blank colour.
+ * From HDR radiance to the screen: upsample, add the stars and the rain at the display's own
+ * resolution and the drops on the eye, expose, vignette, tonemap, grade, paper, grain, dither, and
+ * the eyes-opening reveal from the blank colour.
  */
 
 import camera from '../shaders/camera.wgsl'
 import celestial from '../shaders/celestial.wgsl'
 import common from '../shaders/common.wgsl'
 import cubemap from '../shaders/cubemap.wgsl'
+import eyedrop from '../shaders/eyedrop.wgsl'
 import post from '../shaders/post.wgsl'
 import rain from '../shaders/rain.wgsl'
 import raindrop from '../shaders/raindrop.wgsl'
 import seenStars from '../shaders/seenstars.wgsl'
 import starfield from '../shaders/starfield.wgsl'
 import starlight from '../shaders/starlight.wgsl'
+import storm from '../shaders/storm.wgsl'
 import { shader } from '../shader'
 import { starLayoutWgsl } from '../catalogue'
 import { uniformsWgsl } from '../uniforms'
@@ -35,7 +37,7 @@ export async function createPostPass(
   { device, uniforms }: PassContext,
   { exposure, catalogueCells, catalogueEntries, seen, starCount, format }: PostInputs,
 ): Promise<Pass> {
-  const sources = [uniformsWgsl, common, camera, celestial, cubemap, starLayoutWgsl(starCount), seenStars, starlight, starfield, raindrop, rain, post]
+  const sources = [uniformsWgsl, common, camera, celestial, cubemap, starLayoutWgsl(starCount), seenStars, starlight, starfield, storm, raindrop, rain, eyedrop, post]
   const module = shader(device, 'post', sources)
   const pipeline = await createFullscreenPipeline(device, 'post', module, format)
   const sampler = device.createSampler({ label: 'post', magFilter: 'linear', minFilter: 'linear' })

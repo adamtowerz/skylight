@@ -76,7 +76,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   // The deck, where the line climbs up through its base toward the light.
   let b = dot(origin, frame.toward);
   let crossing = b * b - dot(origin, origin) + pow(u.bottomRadius + u.deckBase, 2.0);
-  if (u.deckCover > 0.0 && crossing >= 0.0) {
+  if (deckAbout() && crossing >= 0.0) {
     let s = sqrt(crossing) - b;
     let density = deckDepthAt(origin + frame.toward * s, SHADOW_STEP) / (extinction * DECK_SHEET);
     let before = exp(-extinction * depth);

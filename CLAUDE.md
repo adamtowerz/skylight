@@ -12,8 +12,9 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
 
 - `sky/index.ts` `start(canvas)`: per frame the CPU advances `clock.ts`, places sun/moon
   (`celestial.ts`) and camera (`camera.ts`), picks the mood (`moods.ts`) and reads the weather
-  (`weather.ts`: altocumulus, fog, haze, deck, precipitation), fills the uniforms and calls
-  `renderer.render`.
+  (`weather.ts`: altocumulus, fog, haze, deck, precipitation, storm), works out the gusts
+  (`gusts.ts`), how far the rain has fallen (`rainfall.ts`) and the drops on the eye
+  (`eyedrops.ts`), fills the uniforms and calls `renderer.render`.
 - `sky/weather.ts` the weather timeline: a pure function of simulated hours. Each kind comes in
   hashed spells (own length and salt), shaped by the hour of day: radiation fog in the small hours
   to mid-morning, haze on warm afternoons, altocumulus thinnest at midday, a rain deck about one
@@ -22,8 +23,14 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   (`weathered`); fog and the deck are slabs solved in closed form (`slab.wgsl`: `fog.wgsl`, and
   `deck.wgsl`/`decklight.wgsl` in the cloud layer, the shadow map and the exposure), and rain is
   drawn in post (`rain.wgsl`: streaks radiating from the vanishing point, each a glass bead
-  refracting the frame and the dome's rings from the exposure pass, `raindrop.wgsl`). Salts must keep
-  the seeds' skies.
+  refracting the frame and the dome's rings from the exposure pass, `raindrop.wgsl`). Thunderstorms
+  are drawn by the day (`stormOf`, about one warm afternoon or evening in nine to eleven, 1–3 h) and
+  pass as a field along the wind (`storm.wgsl`, windows of km upwind of the eye placed from the
+  timeline): their deck closes in ahead, the core (a far deeper, lower, churning base with a shelf
+  at its gust front, fast scud, downpour in curtains, low-key exposure) arrives, then the sky
+  clears behind. Heavy rain fills up to three lattices per rain layer, gusts lean and swell it, and
+  drops land on the eye (`eyedrop.wgsl`: flipped, blurred lenses of the frame). Salts must keep
+  the seeds' skies (first storm: day 16, `?hour=401.55` the shelf, `?hour=570.75` sunset behind one).
 - `sky/renderer.ts` owns every shared GPU resource (uniform and exposure buffers, LUTs, noise
   volume, cloud shadow map, shaft and cloud layers, history pair, scene target) and encodes the
   frame graph in order:
@@ -59,7 +66,7 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
 ## Controls
 
 `?hour=18.8` start hour (without it, a random opening moment from `sky/seeds.ts`; `?seed=n`
-picks one) · `?fog=0.8&haze=0.5&altocumulus=1&deck=1&precipitation=1` hold any kind of weather at a value (0..1) over
+picks one) · `?fog=0.8&haze=0.5&altocumulus=1&deck=1&precipitation=1&storm=1` hold any kind of weather at a value (0..1) over
 the timeline · `?speed=0` freeze the clock · `?mood=0..4` (goldenHaze, violetDusk, emberSky,
 clear, softOvercast) · scroll/drag scrubs time · ←/→ ±15 min · space pause. Sunset is
 18:52; golden hour ≈ 18.0–18.8; afterglow 18.9–19.4; blue hour 19.3–19.8.

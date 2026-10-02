@@ -8,6 +8,8 @@ import type { Celestial } from './celestial'
 import type { History } from './history'
 import { cloudSchedule } from './interleave'
 import type { Vec2, Vec3 } from './math'
+import { eyeDropSlots } from './eyedrops'
+import type { Gusts } from './gusts'
 import { drift, moodUniforms, type Mood } from './moods'
 import { struct, type Schema, type StructValues, type StructWriter } from './struct'
 import { weathered, weatherUniforms, type Weather } from './weather'
@@ -80,10 +82,24 @@ const schema = {
   fogChurn: 'f32', // drift of its thickness through the noise's third axis
 
   // Deck and rain (km, mm/h): a low grey deck of stratus and nimbostratus, and the rain from it
-  deckCover: 'f32', // share of the sky it covers
+  deckCover: 'f32', // share of the sky it covers, away from a storm
   deckBase: 'f32', // height of its base, on average
   deckDepth: 'f32', // optical depth of its columns where whole, on average
-  rainRate: 'f32',
+  rainRate: 'f32', // light rain, all over the deck
+
+  // A thunderstorm passing over, a field across the sky (storm.wgsl; km upwind of the eye)
+  stormPeak: 'f32', // how fierce at its heart, 0 → 1
+  stormCore: 'vec4f', // its core's window: in from x to y, out from z to w
+  stormDeck: 'vec4f', // the window of the deck it brings
+  stormDepth: 'f32', // optical depth of its base at its heart
+  stormRain: 'f32', // mm/h at its heart
+
+  // Rain near the eye (m/s, m), and the drops on it (eyedrops.ts)
+  rainGust: 'f32', // what the gusts make of the rain rate
+  rainWind: 'vec2f',
+  rainFallSpeed: 'f32',
+  rainFallen: 'f32', // folded
+  eyeDrops: `array<vec4f, ${eyeDropSlots}>`, // per drop: uv of its centre, radius (view heights), strength
 
   // Post
   exposureBias: 'f32', // stops
@@ -127,10 +143,12 @@ export interface FrameState {
   history: History
   sky: Celestial
   mood: Mood
+  /** The rain near the eye this frame: its gusts, how far it has fallen, the drops on the eye. */
+  rain: Gusts & { rainFallen: number; rainFallSpeed: number; eyeDrops: number[] }
 }
 
 export function fillUniforms(writer: StructWriter<UniformSchema>, state: FrameState) {
-  const { camera, history, sky, mood, weather, hours, frame, ...rest } = state
+  const { camera, history, sky, mood, weather, rain, hours, frame, ...rest } = state
   writer.set({
     ...rest,
     ...camera,
@@ -140,6 +158,7 @@ export function fillUniforms(writer: StructWriter<UniformSchema>, state: FrameSt
     ...weatherUniforms(weather),
     ...drift(hours),
     ...cloudSchedule(frame),
+    ...rain,
     ...post,
   })
 }

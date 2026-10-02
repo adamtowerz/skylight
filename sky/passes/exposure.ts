@@ -11,6 +11,7 @@ import exposure from '../shaders/exposure.wgsl'
 import fog from '../shaders/fog.wgsl'
 import keylight from '../shaders/keylight.wgsl'
 import slab from '../shaders/slab.wgsl'
+import storm from '../shaders/storm.wgsl'
 import valueNoise from '../shaders/valuenoise.wgsl'
 import { shader } from '../shader'
 import { uniformsWgsl } from '../uniforms'
@@ -29,7 +30,7 @@ export interface ExposureInputs {
 export function createExposurePass(context: PassContext, luts: ExposureInputs, output: GPUBuffer): Promise<Pass> {
   return createComputePass(context, {
     label: 'exposure',
-    module: shader(context.device, 'exposure', [uniformsWgsl, common, atmosphere, keylight, valueNoise, slab, fog, decklight, exposure]),
+    module: shader(context.device, 'exposure', [uniformsWgsl, common, atmosphere, keylight, valueNoise, slab, fog, storm, decklight, exposure]),
     entries: [
       uniformsEntry(context.uniforms),
       ...lutEntries(context.device, luts),

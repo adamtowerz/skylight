@@ -21,6 +21,14 @@
 // and lights its underside, most on the flanks of its rolls and lumps that face the sun, least
 // in the lee of those that hang lower toward it. That is the deep orange underside of a Nordic
 // sunset under clouds, gone within minutes as the sun sinks out of reach of the base.
+//
+// A thunderstorm (storm.wgsl) rides in on the deck: under its core the base is a nimbostratus
+// many times deeper, so far darker, and no calm sheet of rolls but ragged and lumpy, churning with
+// its updraughts and downdraughts, its leading edge a shelf lying in tiers along the gust front.
+// Torn scud races beneath it, lit from the sides by the light under the thinner deck around the
+// storm, so it shows paler against the dark base where that light still reaches it through the
+// rain: most at the storm's edges. The downpour veils it all in the light under the deck, in
+// curtains, heavier here and lighter there.
 
 // The deck's wind relative to the heaps': at about a third of their height, a third as fast, so
 // it drifts across the sky at their angular pace; the scud beneath it hurries past faster still.
@@ -118,9 +126,32 @@ const DECK_SHADE_SOFTNESS = 0.35;
 const DECK_PENUMBRA = 0.05;
 const DECK_FIELD_SLOPE = 1.0;
 // Rain's extinction, km⁻¹ at 1 mm/h, and how it grows with the rate: the Marshall–Palmer drops'
-// cross-section, less the half they only diffract forward (Atlas 1953).
+// cross-section, less the half they only diffract forward (Atlas 1953). A downpour of 45 mm/h
+// takes out about 2 km⁻¹: the far side of a storm is lost a couple of kilometres off.
 const RAIN_EXTINCTION = 0.18;
 const RAIN_EXTINCTION_GROWTH = 0.63;
+// A storm's base: how much faster than the deck's it churns through the noise volume, the size of
+// its billows (km), and how far they deepen and thin its column (±, a share of the mean). How far
+// the shelf's tiers along the gust front deepen and thin it.
+const STORM_CHURN = 10.0;
+const STORM_BILLOW_TILE = 1.5;
+const STORM_BILLOW_SPACING = STORM_BILLOW_TILE / 4.0;
+const STORM_CONTRAST = 0.7;
+const SHELF_TIERS = 0.6;
+// The storm's scud: hanging at this share of the way down from the base, faster than the deck's,
+// and how much of the sky it covers under the storm's heart; its shreds' size along and across
+// the wind, km.
+const STORM_SCUD_BELOW = 0.4;
+const STORM_SCUD_SPEED = 1.2;
+const STORM_SCUD_COVER = 0.5;
+const STORM_SCUD_TILE = vec2f(2.0, 0.6);
+// How far off the light under the deck comes in from the sides, km, and the share of it that does.
+const SIDELIGHT_REACH = 2.0;
+const SIDELIGHT = 0.5;
+// Rain falls in curtains a kilometre or so across (km), heavier and lighter than its mean by up to
+// this share.
+const CURTAIN_TILE = 1.5;
+const CURTAIN_CONTRAST = 0.7;
 
 // Where a planet-centred position sits in the deck's drifting field (km), at a wind `speed`
 // relative to the heaps'.
@@ -146,16 +177,34 @@ fn deckRows(x: vec2f) -> vec3f {
 
 // The field past which the deck is cloud. The field gathers about ½, so the cover is spread over
 // its middle (FIELD_SPREAD), and the last gaps close as the cover nears 1: the deck covers about
-// u.deckCover of the sky, and all of it at 1. Its fringes start a quarter of the way out across
+// `cover` of the sky, and all of it at 1. Its fringes start a quarter of the way out across
 // their veil, so that they still fill about as much sky as they hide.
-fn deckThreshold() -> f32 {
-  return mix(0.5 + FIELD_SPREAD, 0.5 - FIELD_SPREAD, u.deckCover) - smoothstep(0.8, 1.0, u.deckCover) - 0.25 * DECK_EDGE;
+fn deckThreshold(cover: f32) -> f32 {
+  return mix(0.5 + FIELD_SPREAD, 0.5 - FIELD_SPREAD, cover) - smoothstep(0.8, 1.0, cover) - 0.25 * DECK_EDGE;
 }
 
-// The deck's column at `x` (deck space), as a share of its mean depth where whole: 0 in its gaps,
-// thinning toward their edges, rolled, celled and lumped by as much as a sample standing for
-// `footprint` km resolves (x); and the column it thins from, the depth of the cell at its heart (y).
-fn deckColumn(x: vec2f, footprint: f32) -> vec2f {
+// How far a storm's base over `ground` (at `x`, deck space, where the rolls there are `rolls`)
+// deepens and thins its column, as a share of its mean: billows boiling through it, and the tiers
+// of the shelf at its leading edge, as much as a sample standing for `footprint` km resolves.
+fn stormMottle(ground: vec2f, x: vec2f, rolls: f32, footprint: f32) -> f32 {
+  let core = stormCoreAt(ground);
+  if (core <= 0.0) {
+    return 0.0;
+  }
+  let churn = STORM_CHURN * u.cloudEvolution;
+  let billows = sampleNoise(vec3f(x / STORM_BILLOW_TILE, churn / STORM_BILLOW_TILE));
+  let ragged = billows.r - 0.5 + (dot(billows.gba, DETAIL_WEIGHTS) - 0.5) * resolved(STORM_BILLOW_SPACING, footprint);
+  let lead = smoothstep(u.stormCore.x, u.stormCore.y, upwind(ground));
+  let shelf = 4.0 * lead * (1.0 - lead);
+  return core * STORM_CONTRAST * 2.0 * ragged + u.stormPeak * shelf * SHELF_TIERS * rolls;
+}
+
+// The deck's column over `ground` (km east and north of the eye), as a share of its mean depth
+// where whole: 0 in its gaps, thinning toward their edges, rolled, celled and lumped by as much as
+// a sample standing for `footprint` km resolves (x); and the column it thins from, the depth of
+// the cell at its heart (y).
+fn deckColumn(ground: vec2f, footprint: f32) -> vec2f {
+  let x = ground - DECK_SPEED * u.cloudWind;
   let evolution = 0.3 * u.cloudEvolution;
   let across = dot(x, ROLL_ACROSS);
   let along = dot(x, vec2f(-ROLL_ACROSS.y, ROLL_ACROSS.x));
@@ -163,14 +212,15 @@ fn deckColumn(x: vec2f, footprint: f32) -> vec2f {
   let detail = resolved(LUMP_SPACING, footprint);
   let lumps = (dot(sampleNoise(vec3f(x / LUMP_TILE, evolution / LUMP_TILE)).gba, DETAIL_WEIGHTS) - 0.5) * detail;
   let field = rows.x + LUMP_EDGES * lumps;
-  let threshold = deckThreshold();
+  let threshold = deckThreshold(deckCoverAt(ground));
   let body = saturate((field - threshold) / DECK_BODY);
   let wisps = sampleNoise(vec3f(vec2f(across, along / DECK_WISP_STRETCH) / DECK_WISP_TILE, evolution / DECK_WISP_TILE)).b - 0.5;
   let past = field - threshold - DECK_WISP_DEPTH * (1.0 - body) * wisps * resolved(DECK_WISP_SPACING, footprint);
   if (past <= 0.0) {
     return vec2f(0.0);
   }
-  let mottle = ROLL_CONTRAST * rows.y + CELL_CONTRAST * 2.0 * (rows.z - 0.5) + LUMP_CONTRAST * 2.0 * lumps;
+  let mottle = ROLL_CONTRAST * rows.y + CELL_CONTRAST * 2.0 * (rows.z - 0.5) + LUMP_CONTRAST * 2.0 * lumps
+    + stormMottle(ground, x, rows.y, footprint);
   let heart = max(mix(HEART_EDGE, 1.0, saturate(past / DECK_BODY)) * (1.0 + mottle), THINNEST * body);
   return vec2f(pow(saturate(past / DECK_EDGE), FRINGE) * heart, heart);
 }
@@ -182,7 +232,7 @@ fn sag(column: f32) -> f32 {
 
 // Optical depth of the deck above the planet-centred point `p` on its base.
 fn deckDepthAt(p: vec3f, footprint: f32) -> f32 {
-  return u.deckDepth * deckColumn(deckSpace(p, DECK_SPEED), footprint).x;
+  return deckDepthOver(p.xz) * deckColumn(p.xz, footprint).x;
 }
 
 // How much of the key light reaches the planet-centred point `p` past the deck's cells, which
@@ -192,6 +242,7 @@ fn deckDepthAt(p: vec3f, footprint: f32) -> f32 {
 // sun's 0.53° disc but the much wider spread of light diffused through the cell's thin edges and
 // scattered in around them. So each cell is taken as blurred over that width, its field's edge
 // and its top's height softened alike, which also leaves out its lumps and wisps.
+// Its cover is the weather's own: near a storm, whose deck caps every heap, none are left to shade.
 fn deckShade(p: vec3f) -> f32 {
   let key = keyLight();
   let height = length(p) - u.bottomRadius;
@@ -204,7 +255,7 @@ fn deckShade(p: vec3f) -> f32 {
   }
   let reach = clamp((tallest - height) / max(climb, 1e-3), DECK_SHADE_REACH.x, DECK_SHADE_REACH.y);
   let x = deckSpace(p, DECK_SPEED);
-  let threshold = deckThreshold();
+  let threshold = deckThreshold(u.deckCover);
   var lit = 1.0;
   for (var i = 0; i < 3; i++) {
     let d = reach * DECK_SHADE_SAMPLES[i];
@@ -222,31 +273,31 @@ fn deckShade(p: vec3f) -> f32 {
   return lit;
 }
 
-// How much of a key light low enough to shine up under the deck gets in, from `x` (deck space):
+// How much of a key light low enough to shine up under the deck gets in, from over `ground`:
 // through the gap where its path climbs back to the base's height. The path climbs so gently that
 // it rises through the base over many kilometres, so the gap is the deck's openness along that
 // stretch of it, not at a point: the share of it that is open, as what gets through is the mean
 // of what each part of the sun's light finds, not what the stretch's mean column would let by.
-fn underlightGap(x: vec2f) -> f32 {
+fn underlightGap(ground: vec2f) -> f32 {
   let key = keyLight();
   let across = max(length(key.direction.xz), 1e-3);
   let toward = key.direction.xz / across;
   // A path dipping at elevation −e from the base climbs back to its height 2R tan e away.
   let dip = max(-key.direction.y, 0.0) / across;
-  let gap = x + toward * clamp(2.0 * u.bottomRadius * dip, UNDERLIGHT_REACH.x, UNDERLIGHT_REACH.y);
+  let gap = ground + toward * clamp(2.0 * u.bottomRadius * dip, UNDERLIGHT_REACH.x, UNDERLIGHT_REACH.y);
   let near = deckColumn(gap - 0.5 * UNDERLIGHT_CROSSING * toward, 1.0).x;
   let far = deckColumn(gap + 0.5 * UNDERLIGHT_CROSSING * toward, 1.0).x;
   return 1.0 - 0.5 * (saturate(near / THINNEST) + saturate(far / THINNEST));
 }
 
-// How much of the low key light that gets in under the deck reaches its base at `x` (deck space),
+// How much of the low key light that gets in under the deck reaches its base over `ground`,
 // of column `column`, past the sags of the base between it and the light (x): a lump that hangs
 // lower toward the light shades the base behind it, so the underside is lit on the flanks and
 // fronts of its lumps and rolls that face the light and dims in their lee, lumpy rather than an
 // even wash. The lee is never dark: the lit lumps share their light into it as it diffuses
 // through them (radiative smoothing, as in decklight.wgsl). And how far the base there rises
 // toward the light over its lumps, km per km (y).
-fn underlightReach(x: vec2f, column: f32, footprint: f32) -> vec2f {
+fn underlightReach(ground: vec2f, column: f32, footprint: f32) -> vec2f {
   let key = keyLight();
   let across = max(length(key.direction.xz), 1e-3);
   let toward = key.direction.xz / across;
@@ -256,7 +307,7 @@ fn underlightReach(x: vec2f, column: f32, footprint: f32) -> vec2f {
   var rise = 0.0;
   for (var i = 0; i < 4; i++) {
     let d = UNDERLIGHT_SHADE_STEP * exp2(f32(i));
-    let there = sag(deckColumn(x + toward * d, max(footprint, 0.25 * d)).x);
+    let there = sag(deckColumn(ground + toward * d, max(footprint, 0.25 * d)).x);
     if (i == 1) {
       rise = (here - there) / d;
     }
@@ -282,63 +333,118 @@ fn underlight(q: vec3f, tau: f32, rise: f32, reach: f32) -> vec3f {
   return irradiance * slabReflectance(tau, max(facing, 0.01)) / PI;
 }
 
+// The light under the deck about `ground` (planet-centred `base` on the base above it), on
+// average: what shines on the scud from above, and on the rain. Under a storm's core it is the dim
+// light through the core, and the brighter light from under the thinner deck around it, coming in
+// sideways through the rain: most at the storm's edges, all but lost in the heart of a downpour.
+fn lightUnder(ground: vec2f, base: vec3f, sky: vec3f) -> vec3f {
+  let up = vec3f(0.0, 1.0, 0.0);
+  let depth = deckDepthOver(ground);
+  let glow = deckGlow(up, base, depth, sky);
+  let here = mix(sky, glow.rgb + glow.a * sky, deckCoverAt(ground));
+  if (!stormAbout()) {
+    return here;
+  }
+  // Around the storm the deck lets through more, as its diffuse transmission (slab.wgsl) does.
+  let through = exp(-rainExtinction(rainOver(ground)) * SIDELIGHT_REACH);
+  let diffused = 1.0 - slabReflectance(depth, 0.5);
+  var sides = 0.0;
+  for (var i = 0; i < 2; i++) {
+    let side = ground + (f32(i) * 2.0 - 1.0) * SIDELIGHT_REACH * STORM_HEADING;
+    sides += 0.5 * (1.0 - slabReflectance(deckDepthOver(side), 0.5)) / diffused;
+  }
+  return here * mix(1.0, sides, SIDELIGHT * through);
+}
+
+// Rain's extinction at `rate` mm/h, km⁻¹.
+fn rainExtinction(rate: f32) -> f32 {
+  return RAIN_EXTINCTION * pow(max(rate, 0.0), RAIN_EXTINCTION_GROWTH);
+}
+
+// Scud on the layer `below` km beneath the deck's base along `dir`, drifting at `speed`, its
+// shreds `tile` km, covering about `cover` of the sky: thin, so lit as a slab by `under`, the
+// light under the deck above it, and the grass below, and from beneath by a low light that gets
+// in. In front of `layer` (the deck seen past it).
+fn scud(dir: vec3f, layer: vec4f, below: f32, speed: f32, tile: vec2f, cover: f32, under: vec3f, footprint: f32) -> vec4f {
+  let low = onLayer(dir, u.deckBase - below);
+  let along = deckSpace(low.xyz, speed);
+  let s = vec2f(dot(along, ROLL_ACROSS), dot(along, vec2f(-ROLL_ACROSS.y, ROLL_ACROSS.x)));
+  let shreds = sampleNoise(vec3f(s / tile, 0.8 * u.cloudEvolution * speed / SCUD_SPEED));
+  let ragged = shreds.r - 0.5 * shreds.g * resolved(tile.y / 8.0, low.w * footprint);
+  let tau = SCUD_DEPTH * saturate((ragged - (1.0 - cover)) / SCUD_EDGE);
+  if (tau <= 0.0) {
+    return layer;
+  }
+  let reflected = slabReflectance(tau, 0.5);
+  var lit = under * (max(1.0 - reflected - exp(-2.0 * tau), 0.0) + u.groundAlbedo * reflected);
+  if (keyLight().direction.y < UNDERLIGHT_BELOW) {
+    lit += underlight(low.xyz, tau, SCUD_FLANK, underlightGap(low.xz));
+  }
+  let through = exp(-tau / max(dir.y, DECK_VIEW_GRAZING));
+  return vec4f(lit + through * layer.rgb, through * layer.a);
+}
+
 // rgb: radiance toward the eye; a: transmittance of what lies beyond: the deck, the scud beneath
 // it and the rain between them and the eye, seen through the air.
 fn deck(dir: vec3f, lighting: CloudLighting) -> vec4f {
-  if (u.deckCover <= 0.0 && u.rainRate <= 0.0) {
+  if (!deckAbout() && u.rainRate <= 0.0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
   let footprint = u.cloudCell * 2.0 * u.tanHalfFov.y / u.resolution.y;
   let hit = onLayer(dir, u.deckBase);
-  let x = deckSpace(hit.xyz, DECK_SPEED);
-  let column = deckColumn(x, hit.w * footprint);
+  let ground = hit.xz;
+  let column = deckColumn(ground, hit.w * footprint);
   let mu = max(dir.y, DECK_VIEW_GRAZING);
   let lowLight = keyLight().direction.y < UNDERLIGHT_BELOW;
   var layer = vec4f(0.0, 0.0, 0.0, 1.0);
   if (column.x > 0.0) {
-    let tau = u.deckDepth * column.x;
-    let body = max(tau, u.deckDepth * column.y);
+    let depth = deckDepthOver(ground);
+    let tau = depth * column.x;
+    let body = max(tau, depth * column.y);
     layer = deckVeil(dir, hit.xyz, tau, body, lighting.sky);
     if (lowLight) {
       // A thin edge is a veil of the light its cell catches from beneath, as it is of the rest:
       // the low light shines through it, neither shaded by the sags around it nor turned by its
       // slope, so it takes about the light of a level base.
-      let gap = underlightGap(x);
+      let gap = underlightGap(ground);
       if (gap > 0.0) {
         let seen = veiled(tau, body, mu);
-        let reach = underlightReach(x, column.x, hit.w * footprint);
+        let reach = underlightReach(ground, column.x, hit.w * footprint);
         let lit = underlight(hit.xyz, body, seen * reach.y, gap * mix(1.0, reach.x, seen));
         layer += vec4f(seen * lit, 0.0);
       }
     }
   }
-  // The light under the deck, on average: what shines on the scud from above, and on the rain.
-  let deckMean = deckGlow(vec3f(0.0, 1.0, 0.0), hit.xyz, u.deckDepth, lighting.sky);
-  let under = mix(lighting.sky, deckMean.rgb + deckMean.a * lighting.sky, u.deckCover);
 
-  // Scud: thin, so lit as a slab by the light under the deck above it and the grass below.
-  let scudCover = SCUD_COVER * smoothstep(0.6, 1.0, u.deckCover);
-  if (scudCover > 0.0) {
-    let low = onLayer(dir, u.deckBase - SCUD_BELOW);
-    let along = deckSpace(low.xyz, SCUD_SPEED);
-    let s = vec2f(dot(along, ROLL_ACROSS), dot(along, vec2f(-ROLL_ACROSS.y, ROLL_ACROSS.x)));
-    let shreds = sampleNoise(vec3f(s / SCUD_TILE, 0.8 * u.cloudEvolution));
-    let ragged = shreds.r - 0.5 * shreds.g * resolved(SCUD_TILE.y / 8.0, low.w * footprint);
-    let tauScud = SCUD_DEPTH * saturate((ragged - (1.0 - scudCover)) / SCUD_EDGE);
-    if (tauScud > 0.0) {
-      let reflected = slabReflectance(tauScud, 0.5);
-      var scud = under * (max(1.0 - reflected - exp(-2.0 * tauScud), 0.0) + u.groundAlbedo * reflected);
-      if (lowLight) {
-        scud += underlight(low.xyz, tauScud, SCUD_FLANK, underlightGap(deckSpace(low.xyz, DECK_SPEED)));
-      }
-      let through = exp(-tauScud / mu);
-      layer = vec4f(scud + through * layer.rgb, through * layer.a);
+  // The light under the deck, taken about halfway out along the view, where the scud and the rain
+  // the eye sees through lie on average.
+  let between = 0.5 * ground;
+  let under = lightUnder(between, hit.xyz, lighting.sky);
+  // The deck's scud, then the storm's beneath it.
+  for (var i = 0; i < 2; i++) {
+    let storming = i == 1;
+    var cover = SCUD_COVER * smoothstep(0.6, 1.0, deckCoverAt(ground));
+    if (storming) {
+      cover = select(0.0, STORM_SCUD_COVER * stormCoreAt(ground), stormAbout());
+    }
+    if (cover > 0.0) {
+      let below = select(SCUD_BELOW, STORM_SCUD_BELOW * u.deckBase, storming);
+      let speed = select(SCUD_SPEED, STORM_SCUD_SPEED, storming);
+      let tile = select(SCUD_TILE, STORM_SCUD_TILE, storming);
+      layer = scud(dir, layer, below, speed, tile, cover, under, footprint);
     }
   }
 
-  // Rain between the deck and the eye veils it a little with the light under the deck.
-  if (u.rainRate > 0.0) {
-    let rain = exp(-RAIN_EXTINCTION * pow(u.rainRate, RAIN_EXTINCTION_GROWTH) * (u.deckBase - SCUD_BELOW) / mu);
+  // Rain between the deck and the eye veils it with the light under the deck, as heavily as it
+  // falls about halfway out along the view, and in curtains under a storm.
+  var rate = rainOver(between);
+  if (rate > 0.0) {
+    let core = stormCoreAt(between) / max(u.stormPeak, 1e-3);
+    if (core > 0.0) {
+      let curtains = sampleNoise(vec3f((between - DECK_SPEED * u.cloudWind) / CURTAIN_TILE, 0.1 * STORM_CHURN * u.cloudEvolution / CURTAIN_TILE)).r;
+      rate *= 1.0 + core * CURTAIN_CONTRAST * (2.0 * curtains - 1.0);
+    }
+    let rain = exp(-rainExtinction(rate) * (u.deckBase - SCUD_BELOW) / mu);
     layer = vec4f(mix(under, layer.rgb, rain), rain * layer.a);
   }
   return throughAir(layer, dir, hit.w);
