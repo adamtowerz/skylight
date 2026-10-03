@@ -2,12 +2,16 @@
 // after the scene's temporal accumulation, like the stars, so every streak is crisp and none is
 // smeared by the cloud history.
 //
-// We lie on our back, so the rain comes straight down at us: every drop falls along the same line,
-// and perspective makes their paths radiate from one vanishing point, the zenith tilted a little
-// upwind by the breeze, lengthening toward the edges of the view. So the drops are placed in the
-// frame of that fall (the rain layers of Tatarchuk 2006, "Artist-directable real-time rain
-// rendering in city environments", turned upward): nested cylinders about the fall line through
-// the eye, one layer each, twice as wide as the last. A drop on a cylinder of radius r at height z
+// We lie on our back, so the rain comes down at us: every drop falls along the same line, its
+// terminal fall plus the wind it is carried in (gusts.ts), and perspective makes their paths
+// radiate from one vanishing point, upwind of the zenith, and converge again on the opposite one
+// below the horizon. A light rain's breeze leans that line a little, so it streams gently out of
+// the sky overhead, lengthening toward the edges of the view; a storm's outflow leans it far over,
+// so its vanishing point leaves the view and the drops sweep across it in slanting, nearly
+// parallel sheets. So the drops are placed in the frame of that fall (the rain layers of
+// Tatarchuk 2006, "Artist-directable real-time rain rendering in city environments", turned
+// upward): nested cylinders about the fall line through the eye, one layer each, twice as wide as
+// the last. A drop on a cylinder of radius r at height z
 // is seen at angle θ from the vanishing point with cot θ = z / r, so as it falls its cot θ runs
 // down at a steady v / r. Each layer is a lattice over (azimuth about the fall line, cot θ)
 // scrolling at that pace, at most one drop per cell, hashed; a pixel looks only at the few cells
@@ -17,17 +21,19 @@
 // so its share of one falls as 1/r while the drops behind a pixel grow as r²: far rain sums to an
 // even veil, which the deck's rain already is (deck.wgsl).
 //
-// Each drop is a streak: where it fell during the eye's exposure (about as long as the eye holds
-// an image, so each streak joins the next frame's and the fall reads as motion, not as flecks),
-// as wide as the drop, and blurred by the eye's focus on the sky, so the nearest drift past large
-// and soft. Across it the streak carries the drop's own light (raindrop.wgsl): a bead of glass,
-// bright at heart where it shows the sky behind it, dark at the rim where it shows the low sky
-// and the grass, warm where it catches a glow. Under an even deck that light differs from the sky
-// behind it by a few per cent, so its contrast is amplified, in stops and bounded, keeping its
-// sign and colour. A streak veils what lies behind it by the share of the exposure the drop spent
-// over each point (round-ended, and longest down its middle, as a sphere sweeps), box-filtered
-// over its blur and the pixel's width together, so each carries the same light wherever it falls
-// and none crawls or sparkles.
+// Each drop is a streak: where it fell during the eye's exposure (about as long as the eye holds an
+// image, so each streak joins the next frame's and the fall reads as motion, not as flecks), though
+// never longer than SMEAR: the eye sees far less smear behind a fast-moving thing than it holds an
+// image for (Burr 1980, "Motion smear"), so a gale's drops stay strokes rather than faint threads
+// across the whole view. It is as wide as the drop, and blurred by the eye's focus on the sky, so
+// the nearest drift past large and soft. Across it the streak carries the drop's own light
+// (raindrop.wgsl): a bead of glass, bright at heart where it shows the sky behind it, dark at the
+// rim where it shows the low sky and the grass, warm where it catches a glow. Under an even deck
+// that light differs from the sky behind it by a few per cent, so its contrast is amplified, in
+// stops and bounded, keeping its sign and colour. A streak veils what lies behind it by the share
+// of the exposure the drop spent over each point (round-ended, and longest down its middle, as a
+// sphere sweeps), box-filtered over its blur and the pixel's width together, so each carries the
+// same light wherever it falls and none crawls or sparkles.
 //
 // Drops near the vanishing point fall almost straight at the eye: they barely move on the screen,
 // so instead of streaks they would be still specks, and further than a pixel's width they would be
@@ -65,6 +71,9 @@ const RAIN_GROUND = 0.3;
 // The eye's exposure, s (about as long as it holds an image), and its pupil, m, focused on the sky.
 const EXPOSURE_TIME = 0.016;
 const APERTURE = 0.004;
+// The longest streak seen, radians, for drops of the nearest layer; further layers', as the
+// square root of their nearness.
+const SMEAR = 0.2;
 // Drops are drawn this much larger than they are, as the sun and moon are, and their contrast
 // amplified (BEAD_CONTRAST): a few drops of light rain must be seen. In heavier rain than
 // SPARSE_RAIN mm/h both fall away as the fourth root of the rate, since a torrent is seen by its
@@ -123,7 +132,9 @@ fn rain(pixel: vec2f, behind: vec3f) -> vec3f {
   let amplified = sqrt(sqrt(min(SPARSE_RAIN / rate, 1.0)));
 
   let dir = rayThrough(pixelNdc(pixel, u.outputResolution));
-  let fall = normalize(vec3f(-u.rainWind.x, u.rainFallSpeed, -u.rainWind.y));
+  let coming = vec3f(-u.rainWind.x, u.rainFallSpeed, -u.rainWind.y);
+  let speed = length(coming);
+  let fall = coming / speed;
   let across = normalize(cross(fall, vec3f(0.0, 0.0, 1.0)));
   let around = cross(fall, across);
   let cosTheta = dot(dir, fall);
@@ -154,12 +165,12 @@ fn rain(pixel: vec2f, behind: vec3f) -> vec3f {
     // the distance they have fallen (of cot θ: a drop at height z on the cylinder is at z / r).
     let rows = round(RAIN_FOLD / (radius * cellSize));
     let scrolled = u.rainFallen / radius;
-    let streak = u.rainFallSpeed / radius * EXPOSURE_TIME;
+    let streak = min(speed / radius * EXPOSURE_TIME, SMEAR * sqrt(nearness) / slant);
     let travel = streak * slant;
     // The drops' apparent size, and the blur they are seen through (with the pixel's own box).
     let size = DROP_SCALE * amplified * 1e-3 * typical / distance;
     let blur = length(vec2f(APERTURE / distance, pixelAngle));
-    let fade = smoothstep(0.0, RAIN_GROUND, radius * height)
+    let fade = smoothstep(0.0, RAIN_GROUND, distance * dir.y)
       * (1.0 - smoothstep(0.5 * RAIN_FAR, RAIN_FAR, distance))
       * smoothstep(STREAKING.x, STREAKING.y, travel / size)
       * smoothstep(STREAK_PIXELS.x, STREAK_PIXELS.y, travel / pixelAngle)

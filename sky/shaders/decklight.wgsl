@@ -14,6 +14,12 @@
 // Height of the deck's top above its base, km: where the key light reaches it through the
 // atmosphere, so it keeps the sun for a moment after the ground has lost it.
 const DECK_THICKNESS = 1.5;
+// A storm's core is the foot of a cumulonimbus whose tower is lit near its top, about this far
+// above its base, km: through so much less air that the low sun there is still white, and the
+// deep blue sky around it whiter than the ground's.
+const STORM_TOWER = 9.0;
+// Wet grass and soil reflect about half what they do dry (Lekner & Dorf 1988).
+const WET_GROUND = 0.5;
 // However lumpy its top, a deck takes in a low light only as the sine of its elevation: a level
 // patch of sky intercepts that share of it, and the lumps just share it out. They catch a little
 // still as it sinks to and past the horizontal, so it is taken in no more grazing than this (a
@@ -41,14 +47,24 @@ fn deckGlow(dir: vec3f, base: vec3f, tau: f32, sky: vec3f) -> vec4f {
   let lit = slabGlow(dir, key.direction, max(key.direction.y, DECK_GRAZING), illuminance, tau, escape);
   let diffuse = max(1.0 - slabReflectance(tau, 0.5) - exp(-2.0 * tau), 0.0);
   let forward = pow(DROPLET_ANISOTROPY, 1.0 + 2.0 * tau) * diffuse;
-  let bounce = 1.0 / (1.0 - u.groundAlbedo * slabReflectance(tau, 0.5));
-  return vec4f((lit + escape * sky * (diffuse - forward)) * bounce, forward);
+  let bounce = 1.0 / (1.0 - groundUnder(base) * slabReflectance(tau, 0.5));
+  return vec4f((lit + escape * sky * (diffuse - forward)) * bounce * slabUnabsorbed(tau), forward);
 }
 
-// Illuminance of the key light on the deck's top above its base at `base` (planet-centred).
+// The albedo of the ground beneath the deck at `base` (planet-centred), which bounces back up what
+// gets through: the grass, soaked dark under a storm's downpour. Beneath a deck deep enough to send
+// nearly all of it down again, the bounce goes back and forth many times, and dry grass would tint
+// the whole base its green-brown.
+fn groundUnder(base: vec3f) -> vec3f {
+  return u.groundAlbedo * mix(1.0, WET_GROUND, stormCoreAt(base.xz) / max(u.stormPeak, 1e-3));
+}
+
+// Illuminance of the key light on the deck's top above its base at `base` (planet-centred): high
+// up a storm's tower over its core.
 fn deckTopIlluminance(base: vec3f) -> vec3f {
   let key = keyLight();
-  let top = base * (1.0 + DECK_THICKNESS / length(base));
+  let core = stormCoreAt(base.xz) / max(u.stormPeak, 1e-3);
+  let top = base * (1.0 + mix(DECK_THICKNESS, STORM_TOWER, core) / length(base));
   return key.illuminance * transmittanceAt(top, key.direction);
 }
 

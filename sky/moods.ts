@@ -5,7 +5,7 @@
  * sunsets look alike.
  */
 
-import { naturalSeconds } from './clock'
+import { clockSeconds, naturalSeconds } from './clock'
 import { lerp, multiply, scale, smoothstep, type Vec2, type Vec3 } from './math'
 import type { UniformValues } from './uniforms'
 
@@ -244,11 +244,16 @@ export const windOffset = (seconds: number): Vec2 => [wind[0] * seconds, wind[1]
 /**
  * Cloud and fog motion as a pure function of simulated time, so scrubbing the clock scrubs the
  * clouds too and a given `?hour=` always shows the same sky. The motion runs on the clock's
- * natural seconds, so the drift looks equally calm at noon and at sunset.
+ * natural seconds, so the drift looks equally calm at noon and at sunset. A storm's own motions
+ * run on the clock's seconds instead, lingering included, so its scud keeps racing while the
+ * clock slows for it.
  */
 export function drift(hours: number): Partial<UniformValues> {
   const seconds = naturalSeconds(hours)
+  const storm = clockSeconds(hours)
   return {
+    stormWind: windOffset(storm),
+    stormChurn: evolutionPerSecond * storm,
     cloudWind: windOffset(seconds),
     cloudEvolution: evolutionPerSecond * seconds,
     fogWind: [breeze[0] * seconds, breeze[1] * seconds],

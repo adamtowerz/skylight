@@ -30,9 +30,14 @@ fn stormAbout() -> bool {
   return u.stormPeak > 0.0;
 }
 
+// How far the sky over `ground` is covered by the deck a storm brings.
+fn stormDeckAt(ground: vec2f) -> f32 {
+  return smoothstep(0.0, 0.2, u.stormPeak) * stormWindow(upwind(ground), u.stormDeck);
+}
+
 // The deck's cover over `ground`: the weather's own, and all of the sky about a storm.
 fn deckCoverAt(ground: vec2f) -> f32 {
-  return max(u.deckCover, smoothstep(0.0, 0.2, u.stormPeak) * stormWindow(upwind(ground), u.stormDeck));
+  return max(u.deckCover, stormDeckAt(ground));
 }
 
 // Whether a deck may be anywhere in view.

@@ -252,9 +252,15 @@ three hours. It is not a spell over the whole sky but a thing that passes (`stor
 its core and their edges ride in on the wind from the west-north-west, where the eye looks, so the
 weather at a point is the timeline's at the moment it reaches the eye, and the windows are placed
 in km upwind of the eye as it sweeps over. The deck closes in an hour ahead, light rain leads in,
-and the core arrives abruptly behind its gust front: a nimbostratus base of optical depth about
-250, six times a rainy day's, lower, so far darker; no calm sheet of rolls but billows churning ten
-times as fast, and at its leading edge a shelf lying in tiers along the front. Under it scud races
+and the core arrives abruptly behind its gust front: the foot of a cumulonimbus, optical depth
+about 700, some seventeen times a rainy day's, lower, so far darker; no calm sheet of rolls but
+billows churning ten times as fast, heavy lobes sagging from it and wisps torn thin between them,
+and at its leading edge a shelf lying in tiers along the front. Its base reads slate blue-grey, not
+the brown-grey of a low sun through a deck: its tower is lit some 9 km up, where even a low sun is
+still white; light that scatters tens of thousands of times on its way down through so deep a
+cloud loses a share of its red to the water itself (kτ / sinh kτ of the diffusion, Bohren's "green
+thunderstorm"); and the grass under the downpour is soaked dark, so the light bounced back and
+forth between it and the base no longer tints it green-brown. Under it scud races
 twice as fast as the deck's, lit by the light under the thinner deck around the storm coming in
 sideways through the rain, so it is paler at the storm's edges. The rain pours up to 45 mm/h, as
 the square of how fierce the storm is, and its extinction (about 2 km⁻¹) hides the far side of the
@@ -262,7 +268,14 @@ storm in the light under the deck, in curtains, heavier here and lighter there. 
 it, but a storm is a low-key scene: under its core it exposes 1.2 stops darker and does not open up,
 so it feels dark. The heaps are capped away under its deck, which hides the moon and stars, and
 behind it the sky breaks up and clears; at sunset the low sun shines in under the departing base
-through the clearing and sets its underside on fire.
+through the clearing and sets its underside on fire, catching the flanks of its finer lumps and
+lobes, which the storm's outflow churns into the deck it trails. That light skims in beneath the
+deck from where it breaks, through the moist air and trailing rain under it, so the fire sweeps in
+from the clearing edge rather than lighting the whole underside at once.
+
+The rain under a storm's outflow does not stream out of the sky overhead as a light rain's does:
+the wind leans its fall line so far over that its vanishing point leaves the view, and the drops
+sweep across it in slanting, nearly parallel sheets.
 
 Heavy rain is the same drops, more, larger and faster. Each rain layer holds up to three lattices,
 filled one after the next, a drop that heavier rain adds fading in over the last of its cell's

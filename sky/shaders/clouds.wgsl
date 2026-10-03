@@ -83,11 +83,16 @@ fn cloudLighting() -> CloudLighting {
 // The air between the eye and a cloud layer `distance` km away dims it and veils it with the sky
 // behind, in proportion to the layer's opacity (rgb = radiance, a = transmittance).
 fn throughAir(layer: vec4f, dir: vec3f, distance: f32) -> vec4f {
+  return throughLitAir(layer, dir, distance, skyViewRadiance(dir));
+}
+
+// As throughAir, the air lit as `airlight` (aerialPerspective).
+fn throughLitAir(layer: vec4f, dir: vec3f, distance: f32, airlight: vec3f) -> vec4f {
   let opacity = 1.0 - layer.a;
   if (opacity < 1e-4) {
     return layer;
   }
-  return vec4f(aerialPerspective(layer.rgb / opacity, dir, distance) * opacity, layer.a);
+  return vec4f(aerialPerspective(layer.rgb / opacity, dir, distance, airlight) * opacity, layer.a);
 }
 
 // rgb: radiance scattered toward the eye; a: transmittance of whatever lies behind. `jitter` in

@@ -102,11 +102,13 @@ const UNDERLIGHT_BELOW = 0.05;
 const UNDERLIGHT_REACH = vec2f(10.0, 150.0);
 // How far along the gap the light's path takes to climb through the base, km; how far off the
 // first of the sags it passes beneath lies, km (then twice as far, each time; the base's rise is
-// taken to the second); and how deep into its path a sag hangs to take out all but 1/e of the
-// light, km: a sag's fringe lets some through.
+// taken to the second, and under a storm's deck also to UNDERLIGHT_RISE_STEP); and how deep
+// into its path a sag hangs to take out all but 1/e of the light, km: a sag's fringe lets some
+// through.
 const UNDERLIGHT_CROSSING = 8.0;
 const UNDERLIGHT_SHADE_STEP = 0.1;
 const UNDERLIGHT_SHADE_SOFTNESS = 0.08;
+const UNDERLIGHT_RISE_STEP = 0.04;
 // The share of the light the lee of a lump still gets, and how far a base that turns from the
 // light still takes it in (as a cosine).
 const UNDERLIGHT_LEE = 0.4;
@@ -137,6 +139,16 @@ const STORM_CHURN = 10.0;
 const STORM_BILLOW_TILE = 1.5;
 const STORM_BILLOW_SPACING = STORM_BILLOW_TILE / 4.0;
 const STORM_CONTRAST = 0.7;
+// Finer, its heavier lobes, sagging pouches of the downdraughts (tile km, so about a quarter of
+// it apart, and how much deeper they make it), and the thin wisps the updraughts tear out between
+// them, drawn out along the wind (tile km, stretch, and how much thinner they leave it).
+const STORM_LOBE_TILE = 0.5;
+const STORM_LOBE_SPACING = STORM_LOBE_TILE / 4.0;
+const STORM_LOBES = 0.9;
+const STORM_WISP_TILE = 0.35;
+const STORM_WISP_STRETCH = 3.0;
+const STORM_WISP_SPACING = STORM_WISP_TILE / 8.0;
+const STORM_WISPS = 0.6;
 const SHELF_TIERS = 0.6;
 // The storm's scud: hanging at this share of the way down from the base, faster than the deck's,
 // and how much of the sky it covers under the storm's heart; its shreds' size along and across
@@ -145,6 +157,12 @@ const STORM_SCUD_BELOW = 0.4;
 const STORM_SCUD_SPEED = 1.2;
 const STORM_SCUD_COVER = 0.5;
 const STORM_SCUD_TILE = vec2f(2.0, 0.6);
+// The clearer air under a storm's deck, between its showers, takes out this much, km⁻¹ (a
+// visibility of about 20 km); the way a low light skims beneath it from its edge is taken as
+// running upwind at least this steeply, and its rain sampled no further out than this, km.
+const UNDER_DECK_AIR = 0.2;
+const STORM_SKIM = 0.2;
+const STORM_SKIM_REACH = 4.0;
 // How far off the light under the deck comes in from the sides, km, and the share of it that does.
 const SIDELIGHT_REACH = 2.0;
 const SIDELIGHT = 0.5;
@@ -184,8 +202,9 @@ fn deckThreshold(cover: f32) -> f32 {
 }
 
 // How far a storm's base over `ground` (at `x`, deck space, where the rolls there are `rolls`)
-// deepens and thins its column, as a share of its mean: billows boiling through it, and the tiers
-// of the shelf at its leading edge, as much as a sample standing for `footprint` km resolves.
+// deepens and thins its column, as a share of its mean: billows boiling through it, heavy lobes
+// hanging from it and wisps torn thin between them, and the tiers of the shelf at its leading
+// edge, as much as a sample standing for `footprint` km resolves.
 fn stormMottle(ground: vec2f, x: vec2f, rolls: f32, footprint: f32) -> f32 {
   let core = stormCoreAt(ground);
   if (core <= 0.0) {
@@ -194,9 +213,15 @@ fn stormMottle(ground: vec2f, x: vec2f, rolls: f32, footprint: f32) -> f32 {
   let churn = STORM_CHURN * u.cloudEvolution;
   let billows = sampleNoise(vec3f(x / STORM_BILLOW_TILE, churn / STORM_BILLOW_TILE));
   let ragged = billows.r - 0.5 + (dot(billows.gba, DETAIL_WEIGHTS) - 0.5) * resolved(STORM_BILLOW_SPACING, footprint);
+  let lobe = sampleNoise(vec3f(x / STORM_LOBE_TILE, churn / STORM_LOBE_TILE)).g;
+  let lobes = smoothstep(0.35, 0.95, lobe) * resolved(STORM_LOBE_SPACING, footprint);
+  let along = vec2f(dot(x, STORM_HEADING), dot(x, vec2f(-STORM_HEADING.y, STORM_HEADING.x)) * STORM_WISP_STRETCH);
+  let wisp = sampleNoise(vec3f(along / (STORM_WISP_TILE * STORM_WISP_STRETCH), churn / STORM_WISP_TILE)).b;
+  let wisps = smoothstep(0.5, 0.85, wisp) * (1.0 - lobes) * resolved(STORM_WISP_SPACING, footprint);
   let lead = smoothstep(u.stormCore.x, u.stormCore.y, upwind(ground));
   let shelf = 4.0 * lead * (1.0 - lead);
-  return core * STORM_CONTRAST * 2.0 * ragged + u.stormPeak * shelf * SHELF_TIERS * rolls;
+  return core * (STORM_CONTRAST * 2.0 * ragged + STORM_LOBES * lobes - STORM_WISPS * wisps)
+    + u.stormPeak * shelf * SHELF_TIERS * rolls;
 }
 
 // The deck's column over `ground` (km east and north of the eye), as a share of its mean depth
@@ -287,7 +312,25 @@ fn underlightGap(ground: vec2f) -> f32 {
   let gap = ground + toward * clamp(2.0 * u.bottomRadius * dip, UNDERLIGHT_REACH.x, UNDERLIGHT_REACH.y);
   let near = deckColumn(gap - 0.5 * UNDERLIGHT_CROSSING * toward, 1.0).x;
   let far = deckColumn(gap + 0.5 * UNDERLIGHT_CROSSING * toward, 1.0).x;
-  return 1.0 - 0.5 * (saturate(near / THINNEST) + saturate(far / THINNEST));
+  return (1.0 - 0.5 * (saturate(near / THINNEST) + saturate(far / THINNEST))) * underStorm(ground, toward);
+}
+
+// How much of a low light that gets in under a storm's deck where it ends survives the way from
+// that edge to `ground`, coming from `toward` (unit, horizontal): it skims beneath the deck the
+// whole way, through the moist air and the rain trailing from it. So as a storm moves off and the
+// sky clears behind it, its underside does not catch fire all at once but from the clearing edge,
+// the light sweeping in under it as the edge comes nearer.
+fn underStorm(ground: vec2f, toward: vec2f) -> f32 {
+  if (!stormAbout()) {
+    return 1.0;
+  }
+  // How fast the way toward the light runs upwind, and so which of the deck's edges it meets.
+  let climb = -dot(toward, STORM_HEADING);
+  let here = upwind(ground);
+  let edge = select(0.5 * (u.stormDeck.x + u.stormDeck.y), 0.5 * (u.stormDeck.z + u.stormDeck.w), climb > 0.0);
+  let way = max((edge - here) / select(min(climb, -STORM_SKIM), max(climb, STORM_SKIM), climb > 0.0), 0.0);
+  let between = ground + 0.5 * min(way, STORM_SKIM_REACH) * toward;
+  return exp(-(UNDER_DECK_AIR + rainExtinction(rainOver(between))) * way);
 }
 
 // How much of the low key light that gets in under the deck reaches its base over `ground`,
@@ -312,6 +355,15 @@ fn underlightReach(ground: vec2f, column: f32, footprint: f32) -> vec2f {
       rise = (here - there) / d;
     }
     hangs = max(hangs, there - here + climb * d);
+  }
+  // A storm's deck, churned by its outflow, is lumped and lobed finer than that step resolves:
+  // half its slope is taken over the finest, so their flanks catch the light within the broader
+  // undulations.
+  let stormy = stormDeckAt(ground);
+  if (stormy > 0.0) {
+    let fine = UNDERLIGHT_RISE_STEP;
+    let lobed = (here - sag(deckColumn(ground + toward * fine, max(footprint, 0.25 * fine)).x)) / fine;
+    rise = mix(rise, lobed, 0.5 * stormy);
   }
   return vec2f(mix(UNDERLIGHT_LEE, 1.0, exp(-hangs / UNDERLIGHT_SHADE_SOFTNESS)), rise);
 }
@@ -447,5 +499,8 @@ fn deck(dir: vec3f, lighting: CloudLighting) -> vec4f {
     let rain = exp(-rainExtinction(rate) * (u.deckBase - SCUD_BELOW) / mu);
     layer = vec4f(mix(under, layer.rgb, rain), rain * layer.a);
   }
-  return throughAir(layer, dir, hit.w);
+  // Under a storm's deck the air is lit by the light under it, not by the sun as the clear sky's
+  // is: no golden glow veils its gloom.
+  let airlight = mix(skyViewRadiance(dir), under, stormDeckAt(between));
+  return throughLitAir(layer, dir, hit.w, airlight);
 }

@@ -112,7 +112,7 @@ function run(canvas: HTMLCanvasElement, { device }: Gpu, renderer: Renderer, onL
       history: history.next(view, clock.hours),
       sky,
       mood: moodAt(clock.hours),
-      rain: { ...wind, ...rainfall.advance(dt, rate), eyeDrops: eyeDrops.advance(dt, time, rate) },
+      rain: { ...wind, ...rainfall.advance(dt, rate, Math.hypot(...wind.rainWind)), eyeDrops: eyeDrops.advance(dt, time, rate) },
     })
     renderer.render(uniforms.data)
   })

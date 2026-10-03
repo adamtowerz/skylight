@@ -1,8 +1,10 @@
 /**
  * The rain's drops, on the CPU: how large they are and how fast they fall at a rain rate (Marshall
- * & Palmer 1948; Atlas, Srivastava & Sekhon 1973), and how far they have fallen. `rain.wgsl`
- * scrolls its lattices of drops by that distance, so when a gust brings heavier rain, with larger,
- * faster drops, they speed up smoothly instead of the lattices jumping to a new pace.
+ * & Palmer 1948; Atlas, Srivastava & Sekhon 1973), and how far they have come along their slant.
+ * They fall through the air at their terminal speed and are carried with it, so in a wind they
+ * come in along a slant at the speed of both together. `rain.wgsl` scrolls its lattices of drops
+ * by that distance, so when a gust brings heavier rain, with larger, faster drops, or blows harder,
+ * they speed up smoothly instead of the lattices jumping to a new pace.
  */
 
 /** Marshall–Palmer: N(D) = N₀ e^(−ΛD), N₀ = 8000 m⁻³ mm⁻¹, Λ = 4.1 R^−0.21 mm⁻¹ (R in mm/h). */
@@ -32,16 +34,16 @@ export function dropsLanding(rate: number, smallest: number) {
 const fold = 1200
 
 export interface Rainfall {
-  /** Advances the drops by `dt` seconds of rain at `rate` mm/h. */
-  advance(dt: number, rate: number): { rainFallen: number; rainFallSpeed: number }
+  /** Advances the drops by `dt` seconds of rain at `rate` mm/h in a wind of `wind` m/s. */
+  advance(dt: number, rate: number, wind: number): { rainFallen: number; rainFallSpeed: number }
 }
 
 export function trackRainfall(): Rainfall {
   let fallen = 0
   return {
-    advance(dt, rate) {
+    advance(dt, rate, wind) {
       const speed = fallSpeed(typicalDrop(Math.max(rate, 0.1)))
-      fallen = (fallen + speed * dt) % fold
+      fallen = (fallen + Math.hypot(speed, wind) * dt) % fold
       return { rainFallen: fallen, rainFallSpeed: speed }
     },
   }

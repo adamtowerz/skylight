@@ -1,10 +1,12 @@
 /**
  * Simulated time of day. Time lingers through sunrise and sunset (the moments worth lying on
  * the grass for) and hurries through midday and deep night: a full day takes about six minutes.
+ * It lingers too while a thunderstorm passes (`stormPace`), so the storm takes minutes, not seconds.
  */
 
 import { lerp, radians, smoothstep } from './math'
 import { sunElevation } from './celestial'
+import { stormPace } from './weather'
 
 /** Real seconds per simulated hour, near the horizon and away from it. */
 const lingerSecondsPerHour = 45
@@ -42,13 +44,16 @@ function lingering(hour: number) {
   return smoothstep(radians(-18), radians(-12), elevation) * (1 - smoothstep(radians(15), radians(22), elevation))
 }
 
-const secondsPerHour = (hour: number) => lerp(hurrySecondsPerHour, lingerSecondsPerHour, lingering(hour))
+const naturalSecondsPerHour = (hour: number) => lerp(hurrySecondsPerHour, lingerSecondsPerHour, lingering(hour))
+
+/** Real seconds per simulated hour at `hours`: the natural pace, slowed further under a storm. */
+const secondsPerHour = (hours: number) => naturalSecondsPerHour(hours) * stormPace(hours).pace
 
 /** Real seconds from midnight to each 1/`stepsPerHour` of a day, at the natural pace. */
 const stepsPerHour = 12
 const timeline = [0]
 for (let step = 0; step < 24 * stepsPerHour; step++) {
-  timeline.push(timeline[step] + secondsPerHour((step + 0.5) / stepsPerHour) / stepsPerHour)
+  timeline.push(timeline[step] + naturalSecondsPerHour((step + 0.5) / stepsPerHour) / stepsPerHour)
 }
 const secondsPerDay = timeline[timeline.length - 1]
 
@@ -63,6 +68,29 @@ export function naturalSeconds(hours: number) {
   const step = (hours - days * 24) * stepsPerHour
   const index = Math.min(Math.floor(step), timeline.length - 2)
   return days * secondsPerDay + lerp(timeline[index], timeline[index + 1], step - index)
+}
+
+/** Steps of the integral of a storm's lingering (Simpson's rule, even). */
+const lingeringSteps = 32
+
+/**
+ * Real seconds the clock takes to reach `hours`: the natural pace's (`naturalSeconds`) plus the
+ * time it has lingered under the day's storm so far. The storm's own motions (its scud, churn and
+ * curtains) run on this, so they keep their pace on screen while the clock slows; they are gone by
+ * the day's end, where this jumps back to the natural pace's.
+ */
+export function clockSeconds(hours: number) {
+  const { since } = stormPace(hours)
+  const span = hours - since
+  if (span <= 0) return naturalSeconds(hours)
+  const step = span / lingeringSteps
+  let lingered = 0
+  for (let i = 0; i <= lingeringSteps; i++) {
+    const at = since + i * step
+    const weight = i === 0 || i === lingeringSteps ? 1 : i % 2 ? 4 : 2
+    lingered += weight * naturalSecondsPerHour(at) * (stormPace(at).pace - 1)
+  }
+  return naturalSeconds(hours) + (lingered * step) / 3
 }
 
 export function createClock({ hours: start, speed = 1 }: ClockOptions): Clock {

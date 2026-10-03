@@ -12,8 +12,9 @@
 //   raySphere(r, mu, radius)  where a ray enters and leaves a shell (clouds, atmosphere)
 //   skyViewRadiance(dir)      atmosphere-only radiance seen from the observer: sunlit + moonlit
 //                             air + airglow. The sky behind everything, and ambient for clouds.
-//   aerialPerspective(radiance, dir, distance)
-//                             dims and veils something `distance` km along a view ray
+//   aerialPerspective(radiance, dir, distance, airlight)
+//                             dims something `distance` km along a view ray and veils it with
+//                             `airlight`, the light of the air in between (most often the sky's)
 //
 // Bindings 1–4 are the LUT inputs; a pass binds only those its entry point reads.
 
@@ -191,12 +192,14 @@ fn skyViewRadiance(dir: vec3f) -> vec3f {
 
 // Aerial perspective for a point `distance` km along view ray `dir` (e.g. a cloud). The air in
 // between dims it by the transmittance between the two points (a ratio of LUT lookups, exact for
-// rays that miss the ground) and veils it with the sky behind, in proportion.
-fn aerialPerspective(radiance: vec3f, dir: vec3f, distance: f32) -> vec3f {
+// rays that miss the ground) and veils it, in proportion, with `airlight`: the radiance the air
+// would have if it went on for ever, which in sunlit air is the sky behind. Air lit only by an
+// even, diffuse light (under an overcast) leaves that light as it is, so there it is that light.
+fn aerialPerspective(radiance: vec3f, dir: vec3f, distance: f32, airlight: vec3f) -> vec3f {
   let r = observerRadius();
   let rd = radiusAlong(r, dir.y, distance);
   let muD = muAlong(r, dir.y, 1.0, distance, rd);
   let behind = max(transmittanceToSpace(rd, muD), vec3f(1e-6));
   let between = min(transmittanceToSpace(r, dir.y) / behind, vec3f(1.0));
-  return radiance * between + skyViewRadiance(dir) * (1.0 - between);
+  return radiance * between + airlight * (1.0 - between);
 }

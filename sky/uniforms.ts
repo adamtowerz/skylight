@@ -93,12 +93,14 @@ const schema = {
   stormDeck: 'vec4f', // the window of the deck it brings
   stormDepth: 'f32', // optical depth of its base at its heart
   stormRain: 'f32', // mm/h at its heart
+  stormWind: 'vec2f', // the heaps' wind offset as cloudWind, but on the clock's seconds (clock.ts)
+  stormChurn: 'f32', // cloudEvolution likewise
 
   // Rain near the eye (m/s, m), and the drops on it (eyedrops.ts)
   rainGust: 'f32', // what the gusts make of the rain rate
   rainWind: 'vec2f',
-  rainFallSpeed: 'f32',
-  rainFallen: 'f32', // folded
+  rainFallSpeed: 'f32', // terminal, through the air
+  rainFallen: 'f32', // along the slant, folded
   eyeDrops: `array<vec4f, ${eyeDropSlots}>`, // per drop: uv of its centre, radius (view heights), strength
 
   // Post

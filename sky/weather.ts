@@ -145,6 +145,12 @@ const stormCore = { arrives: [-0.15, 0], leaves: [-0.25, 0.15] } as const
  * slow enough to see the shelf roll overhead.
  */
 const stormSweep = 3
+/**
+ * The clock lingers as a storm passes, as it does at twilight: at its height (`lingers` times as
+ * long per hour) from a little before the core arrives to a little after it leaves, eased in and
+ * out over `in` and `out`, hours from them. So a storm takes minutes to pass rather than seconds.
+ */
+const stormLingering = { lingers: 2.5, in: [-1, -0.2], out: [0.2, 1] } as const
 
 /**
  * Where the storm's core and the deck it brings begin and end along the wind, km upwind of the eye
@@ -207,6 +213,18 @@ function stormAt(hours: number, held?: number) {
   const drizzle = storm ? open(edges(storm, windows.drizzle, hours), 0) : 1
   const brings = smoothstep(0, 0.2, front.peak)
   return { front, core: front.peak * open(front.core, 0), deck: brings * open(front.deck, 0), drizzle: brings * drizzle }
+}
+
+/**
+ * How many times more slowly than its natural pace the clock runs at `hours` as a storm passes (1
+ * away from one), and since when it has been slowing: the start of that day's lingering.
+ */
+export function stormPace(hours: number): { pace: number; since: number } {
+  const day = Math.floor(hours / 24)
+  const storm = stormOf(day)
+  if (!storm) return { pace: 1, since: 24 * day }
+  const lingering = open(edges(storm, stormLingering, hours), 0)
+  return { pace: lerp(1, stormLingering.lingers, lingering), since: storm.arrives + stormLingering.in[0] }
 }
 
 /** A random number in [0, 1) per spell (a murmur3-style integer mix). */
@@ -284,11 +302,12 @@ const deckDepth = { broken: 17, whole: 42 }
 /** Light rain, mm/h: what `precipitation` 1 brings (light rain is up to 2.5 mm/h). */
 const lightRain = 2
 /**
- * A storm's core: a nimbostratus base far deeper than a rainy day's (optical depth about 250, the
- * depth of a cumulonimbus), lower by up to `stormLowers` km, pouring rain up to `heavyRain` mm/h
- * at its fiercest (a torrential downpour), as the square of how fierce: a weak storm only rains hard.
+ * A storm's core: the foot of a cumulonimbus, far deeper than a rainy day's deck (optical depth
+ * about 700, the column of a tower some 9 km tall), lower by up to `stormLowers` km, pouring rain
+ * up to `heavyRain` mm/h at its fiercest (a torrential downpour), as the square of how fierce: a
+ * weak storm only rains hard.
  */
-const stormDepth = 250
+const stormDepth = 700
 const stormLowers = 0.15
 const heavyRain = 45
 

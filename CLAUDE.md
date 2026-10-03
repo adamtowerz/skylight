@@ -22,13 +22,16 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   deck, no fog under one (and in `cumulus.wgsl`, heaps capped, spread and thinned as one closes, patchily shaded by its cells, gone near full cover). Haze, the deck's clean air and rain's washout go into the mood's air
   (`weathered`); fog and the deck are slabs solved in closed form (`slab.wgsl`: `fog.wgsl`, and
   `deck.wgsl`/`decklight.wgsl` in the cloud layer, the shadow map and the exposure), and rain is
-  drawn in post (`rain.wgsl`: streaks radiating from the vanishing point, each a glass bead
+  drawn in post (`rain.wgsl`: streaks radiating from the vanishing point, slanting in sheets
+  when a storm's wind leans the fall line out of view, each a glass bead
   refracting the frame and the dome's rings from the exposure pass, `raindrop.wgsl`). Thunderstorms
   are drawn by the day (`stormOf`, about one warm afternoon or evening in nine to eleven, 1–3 h) and
   pass as a field along the wind (`storm.wgsl`, windows of km upwind of the eye placed from the
-  timeline): their deck closes in ahead, the core (a far deeper, lower, churning base with a shelf
-  at its gust front, fast scud, downpour in curtains, low-key exposure) arrives, then the sky
-  clears behind. Heavy rain fills up to three lattices per rain layer, gusts lean and swell it, and
+  timeline): their deck closes in ahead, the core (a far deeper, lower, churning, lobed base with
+  a shelf at its gust front, slate blue-grey from its tower lit high up, water absorbing red
+  through τ ≈ 700, `slabUnabsorbed`, and soaked grass, `groundUnder`; fast scud, downpour in
+  curtains, low-key exposure) arrives, then the sky clears behind, a sunset sweeping in under
+  the departing base from the clearing edge (`underStorm`). Heavy rain fills up to three lattices per rain layer, gusts lean and swell it, and
   drops land on the eye (`eyedrop.wgsl`: flipped, blurred lenses of the frame). Salts must keep
   the seeds' skies (first storm: day 16, `?hour=401.55` the shelf, `?hour=570.75` sunset behind one).
 - `sky/renderer.ts` owns every shared GPU resource (uniform and exposure buffers, LUTs, noise

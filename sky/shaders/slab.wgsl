@@ -14,6 +14,23 @@ const DROPLET_ANISOTROPY = 0.85;
 // (the extinction paradox): the phase of light scattered by diffraction alone.
 const DIFFRACTION = 0.96;
 
+// What a droplet absorbs of the light it meets: next to nothing, but water takes out red far more
+// than blue (its absorption about 0.45, 0.06 and 0.007 m⁻¹ at 680, 550 and 440 nm; Pope & Fry
+// 1997), and a droplet about 10 µm in radius holds light along some 20 µm of water per
+// encounter, which with an extinction efficiency of 2 leaves this co-albedo.
+const DROPLET_COALBEDO = vec3f(4.5e-6, 6e-7, 7e-8);
+
+// The share of the light diffusing through a slab of optical depth `tau` that its water does not
+// absorb. Diffusion attenuates as exp(−kτ), k = √(3(1 − ω)(1 − g)), so through a slab it is
+// kτ / sinh kτ of what a conservative one lets by: nothing to a rainy day's deck, but under a
+// storm whose tower is many hundreds deep, light that has scattered tens of thousands of times
+// loses a share of its red, and the base reads slate blue-grey (Bohren 1987; Bohren & Fraser
+// 1993, "The green thunderstorm").
+fn slabUnabsorbed(tau: f32) -> vec3f {
+  let k = max(sqrt(3.0 * (1.0 - DROPLET_ANISOTROPY) * DROPLET_COALBEDO) * tau, vec3f(1e-4));
+  return k / sinh(k);
+}
+
 // Eddington's reflectance of a conservative slab of optical depth `tau` lit from zenith cosine
 // `mu`.
 fn slabReflectance(tau: f32, mu: f32) -> f32 {
