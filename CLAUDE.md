@@ -32,7 +32,9 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
   through τ ≈ 700, `slabUnabsorbed`, and soaked grass, `groundUnder`; fast scud, downpour in
   curtains, low-key exposure) arrives, then the sky clears behind, a sunset sweeping in under
   the departing base from the clearing edge (`underStorm`). Heavy rain fills up to three lattices per rain layer, gusts lean and swell it, and
-  drops land on the eye (`eyedrop.wgsl`: flipped, blurred lenses of the frame). Salts must keep
+  drops land on the eye (`eyedrop.wgsl`: flipped, magnified lenses of the frame and its rain, with
+  a meniscus rim; they slide, some trailing a rivulet; seeded by the opening moment). The clock
+  lingers under a storm (`clock.ts`, ≥ 120 s per simulated hour), so one takes minutes. Salts must keep
   the seeds' skies (first storm: day 16, `?hour=401.55` the shelf, `?hour=570.75` sunset behind one).
 - `sky/renderer.ts` owns every shared GPU resource (uniform and exposure buffers, LUTs, noise
   volume, cloud shadow map, shaft and cloud layers, history pair, scene target) and encodes the

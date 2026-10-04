@@ -146,11 +146,11 @@ const stormCore = { arrives: [-0.15, 0], leaves: [-0.25, 0.15] } as const
  */
 const stormSweep = 3
 /**
- * The clock lingers as a storm passes, as it does at twilight: at its height (`lingers` times as
- * long per hour) from a little before the core arrives to a little after it leaves, eased in and
- * out over `in` and `out`, hours from them. So a storm takes minutes to pass rather than seconds.
+ * The clock lingers as a storm passes, as it does at twilight: fully from a little before the core
+ * arrives to a little after it leaves, eased in and out over `in` and `out`, hours from them
+ * (`clock.ts` sets how slowly).
  */
-const stormLingering = { lingers: 2.5, in: [-1, -0.2], out: [0.2, 1] } as const
+const stormLingering = { in: [-1, -0.2], out: [0.2, 1] } as const
 
 /**
  * Where the storm's core and the deck it brings begin and end along the wind, km upwind of the eye
@@ -216,15 +216,14 @@ function stormAt(hours: number, held?: number) {
 }
 
 /**
- * How many times more slowly than its natural pace the clock runs at `hours` as a storm passes (1
- * away from one), and since when it has been slowing: the start of that day's lingering.
+ * How fully the clock lingers at `hours` for a passing storm (0 away from one, 1 under it), and
+ * since when it has been slowing: the start of that day's lingering.
  */
-export function stormPace(hours: number): { pace: number; since: number } {
+export function stormLingers(hours: number): { lingering: number; since: number } {
   const day = Math.floor(hours / 24)
   const storm = stormOf(day)
-  if (!storm) return { pace: 1, since: 24 * day }
-  const lingering = open(edges(storm, stormLingering, hours), 0)
-  return { pace: lerp(1, stormLingering.lingers, lingering), since: storm.arrives + stormLingering.in[0] }
+  if (!storm) return { lingering: 0, since: 24 * day }
+  return { lingering: open(edges(storm, stormLingering, hours), 0), since: storm.arrives + stormLingering.in[0] }
 }
 
 /** A random number in [0, 1) per spell (a murmur3-style integer mix). */

@@ -101,7 +101,8 @@ const schema = {
   rainWind: 'vec2f',
   rainFallSpeed: 'f32', // terminal, through the air
   rainFallen: 'f32', // along the slant, folded
-  eyeDrops: `array<vec4f, ${eyeDropSlots}>`, // per drop: uv of its centre, radius (view heights), strength
+  eyeDrops: `array<vec4f, ${eyeDropSlots}>`, // per drop: uv of its centre, radius (view heights), how much it shows
+  eyeDropShapes: `array<vec4f, ${eyeDropSlots}>`, // per drop: its trail back from its centre (uv), how much of it is left, its lens's strength
 
   // Post
   exposureBias: 'f32', // stops
@@ -146,7 +147,7 @@ export interface FrameState {
   sky: Celestial
   mood: Mood
   /** The rain near the eye this frame: its gusts, how far it has fallen, the drops on the eye. */
-  rain: Gusts & { rainFallen: number; rainFallSpeed: number; eyeDrops: number[] }
+  rain: Gusts & { rainFallen: number; rainFallSpeed: number; eyeDrops: number[]; eyeDropShapes: number[] }
 }
 
 export function fillUniforms(writer: StructWriter<UniformSchema>, state: FrameState) {

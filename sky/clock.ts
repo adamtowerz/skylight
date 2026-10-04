@@ -1,16 +1,19 @@
 /**
  * Simulated time of day. Time lingers through sunrise and sunset (the moments worth lying on
  * the grass for) and hurries through midday and deep night: a full day takes about six minutes.
- * It lingers too while a thunderstorm passes (`stormPace`), so the storm takes minutes, not seconds.
+ * It lingers too while a thunderstorm passes (`stormLingers`), at least `stormSecondsPerHour` whatever
+ * the hour, so a storm takes a few minutes to pass rather than seconds, mid-afternoon or at dusk.
  */
 
 import { lerp, radians, smoothstep } from './math'
 import { sunElevation } from './celestial'
-import { stormPace } from './weather'
+import { stormLingers } from './weather'
 
 /** Real seconds per simulated hour, near the horizon and away from it. */
 const lingerSecondsPerHour = 45
 const hurrySecondsPerHour = 9
+/** Real seconds per simulated hour at least, under a storm: its 1–3 h take some 2–6 minutes. */
+const stormSecondsPerHour = 120
 /** How quickly a nudge or scrub eases in, per second. */
 const nudgeRate = 4
 
@@ -46,8 +49,14 @@ function lingering(hour: number) {
 
 const naturalSecondsPerHour = (hour: number) => lerp(hurrySecondsPerHour, lingerSecondsPerHour, lingering(hour))
 
+/** How many real seconds per simulated hour a storm adds to the natural pace at `hours`. */
+function stormSeconds(hours: number) {
+  const natural = naturalSecondsPerHour(hours)
+  return stormLingers(hours).lingering * Math.max(stormSecondsPerHour - natural, 0)
+}
+
 /** Real seconds per simulated hour at `hours`: the natural pace, slowed further under a storm. */
-const secondsPerHour = (hours: number) => naturalSecondsPerHour(hours) * stormPace(hours).pace
+const secondsPerHour = (hours: number) => naturalSecondsPerHour(hours) + stormSeconds(hours)
 
 /** Real seconds from midnight to each 1/`stepsPerHour` of a day, at the natural pace. */
 const stepsPerHour = 12
@@ -80,7 +89,7 @@ const lingeringSteps = 32
  * the day's end, where this jumps back to the natural pace's.
  */
 export function clockSeconds(hours: number) {
-  const { since } = stormPace(hours)
+  const { since } = stormLingers(hours)
   const span = hours - since
   if (span <= 0) return naturalSeconds(hours)
   const step = span / lingeringSteps
@@ -88,7 +97,7 @@ export function clockSeconds(hours: number) {
   for (let i = 0; i <= lingeringSteps; i++) {
     const at = since + i * step
     const weight = i === 0 || i === lingeringSteps ? 1 : i % 2 ? 4 : 2
-    lingered += weight * naturalSecondsPerHour(at) * (stormPace(at).pace - 1)
+    lingered += weight * stormSeconds(at)
   }
   return naturalSeconds(hours) + (lingered * step) / 3
 }

@@ -1,8 +1,9 @@
 // From HDR radiance to the screen, in the order light meets film and paper:
-// stars → rain → drops on the eye → exposure → vignette → AgX tonemap → grade → paper → grain → soft quantization,
+// stars → drops on the eye → rain (through them) → exposure → vignette → AgX tonemap → grade → paper → grain → soft quantization,
 // then the eyes-opening reveal from the blank colour. The goal is emotion, not a photograph.
 // The stars and the rain join the upsampled scene here, at the display's own pixels
-// (`starfield.wgsl`, `rain.wgsl`), and the drops on the eye refract it (`eyedrop.wgsl`).
+// (`starfield.wgsl`, `rain.wgsl`), the rain seen through the drops on the eye where they refract the
+// frame (`eyedrop.wgsl`).
 
 @group(0) @binding(1) var<storage, read> exposure: Exposure;
 @group(0) @binding(2) var scene: texture_2d<f32>;
@@ -104,7 +105,8 @@ fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {
   let r = length((uv - 0.5) * aspect) / length(0.5 * aspect);
 
   let sky = textureSample(scene, sceneSampler, uv).rgb;
-  let hdr = eyeDrops(pixel, rain(pixel, sky + stars(pixel, sky)));
+  let drops = eyeDrops(pixel, sky + stars(pixel, sky));
+  let hdr = rain(drops.rainAt, drops.seen);
   let firstLight = mix(REVEAL_DARKNESS, REVEAL_GLARE, luminance(u.blankColor));
   let eyes = mix(firstLight, 1.0, u.reveal);
   let exposed = hdr * exposure.value * exp2(u.exposureBias) * eyes * vignette(r);
