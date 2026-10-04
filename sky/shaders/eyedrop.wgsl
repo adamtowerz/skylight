@@ -20,18 +20,18 @@ const EYE_DROPS = 6;
 const EYEDROP_POWER = 1.5;
 const EYEDROP_RIM_POWER = 0.6;
 // Width of the drop's soft edge, a share of its radius: the blur of a lens on the eye.
-const EYEDROP_EDGE = 0.15;
+const EYEDROP_EDGE = 0.35;
 // How wide the view through it is blurred, a share of its radius: at its middle, and more toward
 // its rim, where the cap is steeper and its aberrations larger.
-const EYEDROP_BLUR = 0.04;
+const EYEDROP_BLUR = 0.08;
 const EYEDROP_RIM_BLUR = 1.5;
 // The meniscus: where its dark and bright rims lie (shares of the radius), how wide they are, and
 // how much light they take away and gather.
 const MENISCUS_DARK = 0.97;
 const MENISCUS_BRIGHT = 0.86;
-const MENISCUS_WIDTH = 0.05;
-const MENISCUS_SHADE = 0.45;
-const MENISCUS_GLINT = 0.15;
+const MENISCUS_WIDTH = 0.1;
+const MENISCUS_SHADE = 0.25;
+const MENISCUS_GLINT = 0.08;
 // The trail: its width at the drop and at its far end (shares of the drop's radius), and its lens.
 const TRAIL_WIDTH = vec2f(0.35, 0.12);
 const TRAIL_POWER = 1.4;
