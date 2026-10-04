@@ -1,7 +1,7 @@
 /**
  * Invisible controls. URL parameters set the scene up (`?hour=18.4&speed=0&mood=2`, or
  * `?seed=3` for one of the opening moments), and any kind of weather can be held at a value over
- * the timeline (`?fog=0.8&haze=0.5&storm=1`, each 0 → 1); scrolling (or dragging on touch screens) winds
+ * the timeline (`?fog=0.8&haze=0.5&storm=1`, each 0 → 1); scrolling (or dragging and flicking on touch screens) winds
  * time back and forth, ←/→ nudge it by a quarter hour, space pauses, and the pointer adds a
  * touch of parallax.
  */
@@ -15,6 +15,12 @@ const nudgeHours = 0.25
 const scrubSecondsPerPixel = 0.02
 /** Pixels per line, for wheels that scroll by lines. */
 const pixelsPerLine = 16
+/** A drag on a touch screen winds further than a wheel: a phone is short, and a thumb's swipe is all it gets. */
+const touchGain = 4
+/** A flick keeps winding for as long as its speed would carry it in this many seconds, eased out by the clock. */
+const flickCarrySeconds = 0.3
+/** A drag held still this long before lifting is a placement, not a flick. */
+const flickStaleMs = 100
 
 export interface Params {
   hour?: number
@@ -80,15 +86,30 @@ export function bindControls(target: Window, clock: Clock, camera: Camera): () =
   }
 
   let touchY: number | undefined
+  let touchAt = 0
+  // Pixels per millisecond the finger was last moving at, smoothed over the last few moves.
+  let touchVelocity = 0
   function onTouchStart(event: TouchEvent) {
     touchY = event.touches.length === 1 ? event.touches[0].clientY : undefined
+    touchAt = event.timeStamp
+    touchVelocity = 0
   }
   function onTouchMove(event: TouchEvent) {
     if (touchY === undefined || event.touches.length !== 1) return
     const y = event.touches[0].clientY
-    scrub(touchY - y)
+    const pixels = (touchY - y) * touchGain
+    const elapsed = Math.max(event.timeStamp - touchAt, 1)
+    touchVelocity = 0.5 * touchVelocity + 0.5 * (pixels / elapsed)
+    scrub(pixels)
     touchY = y
+    touchAt = event.timeStamp
     event.preventDefault()
+  }
+  function onTouchEnd(event: TouchEvent) {
+    if (touchY !== undefined && event.timeStamp - touchAt < flickStaleMs) {
+      scrub(touchVelocity * flickCarrySeconds * 1000)
+    }
+    touchY = undefined
   }
 
   const active = { passive: false }
@@ -97,11 +118,13 @@ export function bindControls(target: Window, clock: Clock, camera: Camera): () =
   target.addEventListener('wheel', onWheel, active)
   target.addEventListener('touchstart', onTouchStart)
   target.addEventListener('touchmove', onTouchMove, active)
+  target.addEventListener('touchend', onTouchEnd)
   return () => {
     target.removeEventListener('keydown', onKeyDown)
     target.removeEventListener('pointermove', onPointerMove)
     target.removeEventListener('wheel', onWheel)
     target.removeEventListener('touchstart', onTouchStart)
     target.removeEventListener('touchmove', onTouchMove)
+    target.removeEventListener('touchend', onTouchEnd)
   }
 }

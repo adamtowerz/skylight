@@ -73,7 +73,7 @@ rendering; `.context/SPEC.md` (gitignored) is the detailed spec, when present.
 `?hour=18.8` start hour (without it, a random opening moment from `sky/seeds.ts`; `?seed=n`
 picks one) · `?fog=0.8&haze=0.5&altocumulus=1&deck=1&precipitation=1&storm=1` hold any kind of weather at a value (0..1) over
 the timeline · `?speed=0` freeze the clock · `?mood=0..4` (goldenHaze, violetDusk, emberSky,
-clear, softOvercast) · scroll/drag scrubs time · ←/→ ±15 min · space pause. Sunset is
+clear, softOvercast) · scroll/drag scrubs time (touch winds 4× further, and a flick carries on) · ←/→ ±15 min · space pause. Sunset is
 18:52; golden hour ≈ 18.0–18.8; afterglow 18.9–19.4; blue hour 19.3–19.8.
 
 ## Gotchas
